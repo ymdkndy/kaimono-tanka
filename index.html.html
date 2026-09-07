@@ -1,0 +1,1432 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>お買い物 単価チェッカー</title>
+<style>
+  :root {
+    --bg: #FAF7F2;
+    --card: #FFFFFF;
+    --ink: #2B2823;
+    --sub: #8A8478;
+    --line: #EAE4D9;
+    --accent: #4E7C59;
+    --accent-soft: #E6EEE7;
+    --warn: #C4643A;
+    --warn-soft: #F6E7DE;
+    --mid: #B08D2A;
+    --mid-soft: #F3ECD6;
+    --radius: 16px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    padding-bottom: 90px;
+    -webkit-font-smoothing: antialiased;
+  }
+  header {
+    padding: 20px 18px 12px;
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 10;
+  }
+  header h1 {
+    font-size: 19px;
+    margin: 0 0 2px;
+    font-weight: 700;
+  }
+  header p {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--sub);
+  }
+  main { padding: 4px 16px 20px; max-width: 480px; margin: 0 auto; }
+
+  .card {
+    background: var(--card);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 14px;
+    border: 1px solid var(--line);
+  }
+  .field { margin-bottom: 12px; }
+  .field label {
+    display: block;
+    font-size: 12.5px;
+    color: var(--sub);
+    margin-bottom: 5px;
+    font-weight: 600;
+  }
+  input[type=text], input[type=number], select {
+    width: 100%;
+    padding: 11px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: #FCFAF7;
+    font-size: 15px;
+    color: var(--ink);
+    font-family: inherit;
+  }
+  input:focus, select:focus { outline: 2px solid var(--accent); border-color: var(--accent); }
+
+  .row2 { display: flex; gap: 10px; }
+  .row2 > div { flex: 1; }
+
+  .catrow { display: flex; gap: 8px; margin-bottom: 12px; }
+  .catbtn {
+    flex: 1;
+    padding: 10px 4px;
+    border-radius: 10px;
+    border: 1.5px solid var(--line);
+    background: #FCFAF7;
+    text-align: center;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--sub);
+  }
+  .catbtn.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+
+  .unitgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+  .unitbtn {
+    padding: 9px 4px;
+    border-radius: 10px;
+    border: 1.5px solid var(--line);
+    background: #FCFAF7;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--sub);
+  }
+  .unitbtn.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+
+  .bigbtn {
+    width: 100%;
+    padding: 14px;
+    border-radius: 12px;
+    border: none;
+    background: var(--accent);
+    color: white;
+    font-size: 15.5px;
+    font-weight: 700;
+    margin-top: 4px;
+  }
+  .bigbtn:active { opacity: 0.85; }
+
+  .preview {
+    margin-top: 4px;
+    padding: 14px;
+    border-radius: 12px;
+    background: var(--accent-soft);
+    text-align: center;
+  }
+  .preview .price { font-size: 24px; font-weight: 800; color: var(--accent); }
+  .preview .label { font-size: 12px; color: var(--sub); margin-top: 2px; }
+  .badge {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 12.5px;
+    font-weight: 700;
+  }
+  .badge.good { background: var(--accent); color: white; }
+  .badge.mid { background: var(--mid); color: white; }
+  .badge.warn { background: var(--warn); color: white; }
+  .hint { font-size: 11.5px; color: var(--sub); margin-top: 6px; }
+
+  .tabs {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background: var(--card);
+    border-top: 1px solid var(--line);
+    display: flex;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+    z-index: 20;
+  }
+  .tab {
+    flex: 1;
+    text-align: center;
+    padding: 8px 4px;
+    border-radius: 10px;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--sub);
+  }
+  .tab.active { color: var(--accent); background: var(--accent-soft); }
+  .tab .icon { font-size: 19px; display: block; margin-bottom: 2px; }
+
+  .view { display: none; }
+  .view.active { display: block; }
+
+  .item-group { margin-bottom: 16px; }
+  .item-group h3 { font-size: 15px; margin: 0 0 8px; padding-left: 2px; }
+  .entry-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    margin-bottom: 6px;
+  }
+  .entry-row.best { border-color: var(--accent); background: var(--accent-soft); }
+  .entry-left { font-size: 13.5px; }
+  .entry-store { font-weight: 700; }
+  .entry-date { color: var(--sub); font-size: 11.5px; margin-left: 6px; }
+  .entry-right { font-weight: 800; font-size: 14.5px; text-align: right; }
+  .entry-right small { font-weight: 500; font-size: 10.5px; color: var(--sub); display: block; }
+  .crown { color: var(--mid); margin-right: 3px; display: inline-block; width: 20px; text-align: left; }
+
+  .empty { text-align: center; color: var(--sub); font-size: 13.5px; padding: 40px 20px; }
+  .search {
+    margin-bottom: 14px;
+  }
+  .delete-x {
+    font-size: 11px;
+    color: var(--warn);
+    padding: 4px 8px;
+    margin-left: 8px;
+    font-weight: 700;
+  }
+  .copy-x {
+    font-size: 15px;
+    color: var(--accent);
+    padding: 4px 6px;
+    font-weight: 700;
+  }
+  .suggest-dropdown {
+    position: absolute;
+    left: 0; right: 0;
+    top: 100%;
+    margin-top: 2px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    max-height: 180px;
+    overflow-y: auto;
+    z-index: 30;
+    display: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  }
+  .suggest-item {
+    padding: 10px 12px;
+    font-size: 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .suggest-item:last-child { border-bottom: none; }
+  .suggest-item:active { background: var(--accent-soft); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>お買い物 単価チェッカー</h1>
+  <p>入力すると自動で単価を計算・比較するよ</p>
+</header>
+
+<main>
+
+  <!-- ADD VIEW -->
+  <div class="view active" id="view-add">
+    <div class="card">
+      <div class="field">
+        <label>お店</label>
+        <select id="storeName" style="width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--line); background:#FCFAF7; font-size:15px; color:var(--ink); font-family:inherit;">
+          <option value="">お店を選択</option>
+        </select>
+        <div class="hint">一覧にないときは「店舗情報」タブで先に登録してね</div>
+      </div>
+
+      <div class="field" style="position:relative;">
+        <label>商品名</label>
+        <input type="text" id="itemName" lang="ja" autocomplete="off" placeholder="例: きゅうり、豚こま">
+        <div id="itemNameSuggest" class="suggest-dropdown"></div>
+      </div>
+
+      <div class="field" style="position:relative;">
+        <label>グループ名(任意)</label>
+        <input type="text" id="groupName" lang="ja" autocomplete="off" placeholder="空欄なら商品名と同じ扱いになる">
+        <div id="groupNameSuggest" class="suggest-dropdown"></div>
+        <div class="hint">名前は違うけど同じ種類の商品(例:「とろ～りスライスチーズ」「とろけるスライスチーズ」→どちらも「スライスチーズ」)をまとめて比較したいときに使ってね</div>
+      </div>
+
+      <div class="field">
+        <label>カテゴリ</label>
+        <div class="catrow" id="catRow" style="flex-wrap: wrap;">
+          <div class="catbtn active" data-cat="野菜" style="flex-basis: 30%;">🥬 野菜</div>
+          <div class="catbtn" data-cat="果物" style="flex-basis: 30%;">🍎 果物</div>
+          <div class="catbtn" data-cat="きのこ" style="flex-basis: 30%;">🍄 きのこ</div>
+          <div class="catbtn" data-cat="肉" style="flex-basis: 30%;">🥩 お肉</div>
+          <div class="catbtn" data-cat="魚" style="flex-basis: 30%;">🐟 魚</div>
+          <div class="catbtn" data-cat="パン" style="flex-basis: 30%;">🍞 パン</div>
+          <div class="catbtn" data-cat="飲み物" style="flex-basis: 30%;">🥤 飲み物</div>
+          <div class="catbtn" data-cat="食品" style="flex-basis: 30%;">🍚 食品</div>
+          <div class="catbtn" data-cat="調味料" style="flex-basis: 30%;">🧂 調味料</div>
+          <div class="catbtn" data-cat="お菓子" style="flex-basis: 30%;">🍪 お菓子</div>
+          <div class="catbtn" data-cat="消耗品" style="flex-basis: 30%;">🧻 消耗品</div>
+          <div class="catbtn" data-cat="その他" style="flex-basis: 30%;">🛒 その他</div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:600; color:var(--ink); font-size:14px;">
+          <input type="checkbox" id="discountToggle" style="width:17px; height:17px;">
+          🏷️ 割引で買った
+        </label>
+      </div>
+
+      <div id="discountFields" style="display:none; margin-bottom:12px;">
+        <div class="field">
+          <label>表示価格(円)</label>
+          <input type="number" id="originalPrice" inputmode="decimal" placeholder="298">
+        </div>
+        <div class="field">
+          <label>割引の種類</label>
+          <div class="catrow" id="discountTypeRow">
+            <div class="catbtn active" data-dtype="percent" style="flex-basis:32%;">%引き</div>
+            <div class="catbtn" data-dtype="amount" style="flex-basis:32%;">円引き</div>
+            <div class="catbtn" data-dtype="half" style="flex-basis:32%;">半額</div>
+          </div>
+        </div>
+        <div class="field" id="discountValueField">
+          <label id="discountValueLabel">割引率(%)</label>
+          <input type="number" id="discountValue" inputmode="decimal" placeholder="20">
+        </div>
+        <div class="hint" id="discountCalc"></div>
+      </div>
+
+      <div class="row2 field">
+        <div>
+          <label>価格(円)</label>
+          <input type="number" id="price" inputmode="decimal" placeholder="198">
+        </div>
+        <div>
+          <label>数量</label>
+          <input type="number" id="qty" inputmode="decimal" placeholder="1">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>単位</label>
+        <div class="unitgrid" id="unitGrid">
+          <div class="unitbtn" data-unit="g">g</div>
+          <div class="unitbtn" data-unit="kg">kg</div>
+          <div class="unitbtn" data-unit="ml">ml</div>
+          <div class="unitbtn active" data-unit="個">個</div>
+          <div class="unitbtn" data-unit="匹">匹</div>
+          <div class="unitbtn" data-unit="枚">枚</div>
+          <div class="unitbtn" data-unit="本">本</div>
+          <div class="unitbtn" data-unit="パック">パック</div>
+          <div class="unitbtn" data-unit="袋">袋</div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>メモ(任意)</label>
+        <input type="text" id="memo" lang="ja" autocomplete="off" placeholder="例: 無洗米、あら塩">
+      </div>
+
+      <div class="preview" id="preview" style="display:none;">
+        <div class="price" id="previewPrice">-</div>
+        <div class="label" id="previewLabel">単価</div>
+        <div id="previewBadge"></div>
+        <div class="hint" id="previewHint"></div>
+      </div>
+
+      <button class="bigbtn" id="saveBtn">この価格を記録する</button>
+      <button id="cancelEditBtn" style="display:none; width:100%; margin-top:8px; padding:12px; border-radius:12px; border:1px solid var(--line); background:transparent; color:var(--sub); font-weight:600; font-size:14px;">編集をキャンセル</button>
+    </div>
+  </div>
+
+  <!-- LIST VIEW -->
+  <div class="view" id="view-list">
+    <div class="catrow" id="filterCatRow" style="flex-wrap: wrap; margin-bottom: 10px;">
+      <div class="catbtn active" data-fcat="全て" style="flex-basis: 22%;">全て</div>
+      <div class="catbtn" data-fcat="野菜" style="flex-basis: 22%;">🥬 野菜</div>
+      <div class="catbtn" data-fcat="果物" style="flex-basis: 22%;">🍎 果物</div>
+      <div class="catbtn" data-fcat="きのこ" style="flex-basis: 22%;">🍄 きのこ</div>
+      <div class="catbtn" data-fcat="肉" style="flex-basis: 22%;">🥩 肉</div>
+      <div class="catbtn" data-fcat="魚" style="flex-basis: 22%;">🐟 魚</div>
+      <div class="catbtn" data-fcat="パン" style="flex-basis: 22%;">🍞 パン</div>
+      <div class="catbtn" data-fcat="飲み物" style="flex-basis: 22%;">🥤 飲み物</div>
+      <div class="catbtn" data-fcat="食品" style="flex-basis: 22%;">🍚 食品</div>
+      <div class="catbtn" data-fcat="調味料" style="flex-basis: 22%;">🧂 調味料</div>
+      <div class="catbtn" data-fcat="お菓子" style="flex-basis: 22%;">🍪 お菓子</div>
+      <div class="catbtn" data-fcat="消耗品" style="flex-basis: 22%;">🧻 消耗品</div>
+      <div class="catbtn" data-fcat="その他" style="flex-basis: 22%;">🛒 その他</div>
+    </div>
+    <input type="text" class="search" id="searchBox" placeholder="商品名で検索...">
+    <div id="listContent"></div>
+  </div>
+
+  <!-- STORE VIEW -->
+  <div class="view" id="view-store">
+    <div class="catrow" id="storeFilterCatRow" style="flex-wrap: wrap; margin-bottom: 14px;">
+      <div class="catbtn active" data-fcat="全て" style="flex-basis: 22%;">全て</div>
+      <div class="catbtn" data-fcat="野菜" style="flex-basis: 22%;">🥬 野菜</div>
+      <div class="catbtn" data-fcat="果物" style="flex-basis: 22%;">🍎 果物</div>
+      <div class="catbtn" data-fcat="きのこ" style="flex-basis: 22%;">🍄 きのこ</div>
+      <div class="catbtn" data-fcat="肉" style="flex-basis: 22%;">🥩 肉</div>
+      <div class="catbtn" data-fcat="魚" style="flex-basis: 22%;">🐟 魚</div>
+      <div class="catbtn" data-fcat="パン" style="flex-basis: 22%;">🍞 パン</div>
+      <div class="catbtn" data-fcat="飲み物" style="flex-basis: 22%;">🥤 飲み物</div>
+      <div class="catbtn" data-fcat="食品" style="flex-basis: 22%;">🍚 食品</div>
+      <div class="catbtn" data-fcat="調味料" style="flex-basis: 22%;">🧂 調味料</div>
+      <div class="catbtn" data-fcat="お菓子" style="flex-basis: 22%;">🍪 お菓子</div>
+      <div class="catbtn" data-fcat="消耗品" style="flex-basis: 22%;">🧻 消耗品</div>
+      <div class="catbtn" data-fcat="その他" style="flex-basis: 22%;">🛒 その他</div>
+    </div>
+    <div id="storeRanking"></div>
+    <div id="storeContent"></div>
+  </div>
+  <!-- BACKUP VIEW -->
+  <div class="view" id="view-backup">
+    <div class="card">
+      <label style="display:block; font-size:12.5px; color:var(--sub); margin-bottom:5px; font-weight:600;">データのバックアップ</label>
+      <div class="hint" style="margin-bottom:10px;">再公開すると記録がリセットされることがあるから、変更する前にここでコピーしておいて、新しいリンクで下の「読み込む」から貼り付けてね。価格の記録と店舗情報の両方がまとめて書き出されるよ。</div>
+      <button class="bigbtn" id="exportBtn" style="margin-bottom:10px;">現在のデータを書き出す</button>
+      <textarea id="exportArea" readonly style="width:100%; height:110px; border-radius:10px; border:1px solid var(--line); background:#FCFAF7; padding:10px; font-size:11px; font-family:monospace;"></textarea>
+    </div>
+    <div class="card">
+      <label style="display:block; font-size:12.5px; color:var(--sub); margin-bottom:5px; font-weight:600;">データを読み込む</label>
+      <div class="hint" style="margin-bottom:10px;">上でコピーした内容をここに貼り付けて読み込むと、今のデータに追加されるよ(重複はしない)。</div>
+      <textarea id="importArea" placeholder="ここに貼り付け" style="width:100%; height:110px; border-radius:10px; border:1px solid var(--line); background:#FCFAF7; padding:10px; font-size:11px; font-family:monospace; margin-bottom:10px;"></textarea>
+      <button class="bigbtn" id="importBtn">この内容を読み込む</button>
+    </div>
+  </div>
+  <!-- STORE INFO VIEW -->
+  <div class="view" id="view-storeinfo">
+    <div class="card">
+      <div class="field">
+        <label>店舗名</label>
+        <input type="text" id="siStoreName" lang="ja" autocomplete="off" placeholder="例: サミット〇〇店">
+      </div>
+      <div class="field">
+        <label>お店グループ名(任意)</label>
+        <input type="text" id="siStoreGroup" list="siStoreGroupList" lang="ja" autocomplete="off" placeholder="空欄なら店舗名と同じ扱いになる">
+        <datalist id="siStoreGroupList"></datalist>
+        <div class="hint">表記ゆれや系列店をまとめて比較したいときに使ってね(例:「サミット渋谷店」→グループ名「サミット」)</div>
+      </div>
+      <div class="field">
+        <label>住所・アクセス</label>
+        <input type="text" id="siAddress" lang="ja" autocomplete="off" placeholder="例: 〇〇駅から徒歩5分">
+      </div>
+      <div class="field">
+        <label>営業時間</label>
+        <div class="row2">
+          <div>
+            <label style="font-size:11px;">開店</label>
+            <input type="time" id="siOpenTime" step="1800">
+          </div>
+          <div>
+            <label style="font-size:11px;">閉店</label>
+            <input type="time" id="siCloseTime" step="1800">
+          </div>
+        </div>
+      </div>
+      <div class="field">
+        <label>駐車場</label>
+        <div class="catrow" id="siParkingRow">
+          <div class="catbtn active" data-parking="不明" style="flex-basis:32%;">不明</div>
+          <div class="catbtn" data-parking="あり" style="flex-basis:32%;">あり</div>
+          <div class="catbtn" data-parking="なし" style="flex-basis:32%;">なし</div>
+        </div>
+      </div>
+      <div class="field">
+        <label>メモ(雰囲気・特徴など)</label>
+        <input type="text" id="siMemo" lang="ja" autocomplete="off" placeholder="例: 野菜が新鮮、レジ混みやすい">
+      </div>
+      <button class="bigbtn" id="siSaveBtn">この店舗情報を保存</button>
+      <button id="siCancelBtn" style="display:none; width:100%; margin-top:8px; padding:12px; border-radius:12px; border:1px solid var(--line); background:transparent; color:var(--sub); font-weight:600; font-size:14px;">編集をキャンセル</button>
+    </div>
+    <div id="storeInfoList"></div>
+  </div>
+
+</main>
+
+<div class="tabs">
+  <div class="tab active" data-view="add"><span class="icon">➕</span>記録する</div>
+  <div class="tab" data-view="list"><span class="icon">📋</span>商品別</div>
+  <div class="tab" data-view="store"><span class="icon">🏪</span>お店比較</div>
+  <div class="tab" data-view="storeinfo"><span class="icon">🏬</span>店舗情報</div>
+  <div class="tab" data-view="backup"><span class="icon">💾</span>バックアップ</div>
+</div>
+
+<div id="confirmOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:100; align-items:center; justify-content:center;">
+  <div style="background:var(--card); border-radius:16px; padding:20px; max-width:280px; margin:0 16px; text-align:center;">
+    <div id="confirmMessage" style="font-size:14px; margin-bottom:16px; color:var(--ink);"></div>
+    <div style="display:flex; gap:8px;">
+      <button id="confirmCancelBtn" style="flex:1; padding:10px; border-radius:10px; border:1px solid var(--line); background:transparent; color:var(--sub); font-weight:600; font-size:14px;">キャンセル</button>
+      <button id="confirmOkBtn" style="flex:1; padding:10px; border-radius:10px; border:none; background:var(--warn); color:white; font-weight:700; font-size:14px;">削除する</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let entries = [];
+function showConfirm(message, onConfirm) {
+  const overlay = document.getElementById("confirmOverlay");
+  document.getElementById("confirmMessage").textContent = message;
+  overlay.style.display = "flex";
+  const okBtn = document.getElementById("confirmOkBtn");
+  const cancelBtn = document.getElementById("confirmCancelBtn");
+  function cleanup() {
+    overlay.style.display = "none";
+    okBtn.removeEventListener("click", onOk);
+    cancelBtn.removeEventListener("click", onCancel);
+  }
+  function onOk() { cleanup(); onConfirm(); }
+  function onCancel() { cleanup(); }
+  okBtn.addEventListener("click", onOk);
+  cancelBtn.addEventListener("click", onCancel);
+}
+
+let currentCat = "野菜";
+let currentUnit = "個";
+let currentFilterCat = "全て";
+let currentStoreFilterCat = "全て";
+let expandedGroups = new Set();
+let rankingExpanded = false;
+let editingId = null;
+const STORAGE_KEY = "grocery-entries-v1";
+const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbzng3lRHp4yrugM3HhN_1tNXvj-AOMJriJdSbBl5iIFwNNnvBezbdeDO0OUger51mn1/exec";
+
+async function sheetGet(key) {
+  const res = await fetch(`${SHEET_API_URL}?key=${encodeURIComponent(key)}`);
+  const data = await res.json();
+  return data.value;
+}
+
+async function sheetSet(key, value) {
+  await fetch(SHEET_API_URL, {
+    method: "POST",
+    body: JSON.stringify({ key, value })
+  });
+}
+
+async function loadEntries() {
+  try {
+    const value = await sheetGet(STORAGE_KEY);
+    entries = value ? JSON.parse(value) : [];
+  } catch (e) {
+    console.error("読み込みエラー:", e);
+    entries = [];
+  }
+  renderAll();
+}
+
+async function saveEntries() {
+  try {
+    await sheetSet(STORAGE_KEY, JSON.stringify(entries));
+  } catch (e) {
+    console.error("Storage error:", e);
+  }
+}
+
+function unitLabel(unit) {
+  if (unit === "g" || unit === "kg") return "100gあたり";
+  if (unit === "ml") return "100mlあたり";
+  return "1" + unit + "あたり";
+}
+
+function computeUnitPrice(price, qty, unit) {
+  if (!qty || qty <= 0) return null;
+  if (unit === "kg") return price / (qty * 10); // per 100g
+  if (unit === "g") return price / (qty / 100); // per 100g
+  if (unit === "ml") return price / (qty / 100); // per 100ml
+  return price / qty; // per 個/袋/パック
+}
+
+function normUnitKey(unit) {
+  if (unit === "g" || unit === "kg") return "100g";
+  if (unit === "ml") return "100ml";
+  return unit;
+}
+
+function fmt(n) {
+  return Math.round(n * 10) / 10;
+}
+
+function todayStr() {
+  const d = new Date();
+  return `${d.getMonth()+1}/${d.getDate()}`;
+}
+
+// ---- Category / Unit selectors ----
+// ---- Discount ----
+let currentDiscountType = "percent";
+
+document.getElementById("discountToggle").addEventListener("change", (e) => {
+  const on = e.target.checked;
+  document.getElementById("discountFields").style.display = on ? "block" : "none";
+  const priceInput = document.getElementById("price");
+  if (on) {
+    priceInput.readOnly = true;
+    priceInput.style.background = "#F0EEE8";
+    calcDiscountPrice();
+  } else {
+    priceInput.readOnly = false;
+    priceInput.style.background = "";
+    document.getElementById("originalPrice").value = "";
+    document.getElementById("discountValue").value = "";
+    document.getElementById("discountCalc").textContent = "";
+  }
+});
+
+document.getElementById("discountTypeRow").addEventListener("click", (e) => {
+  const btn = e.target.closest(".catbtn");
+  if (!btn) return;
+  currentDiscountType = btn.dataset.dtype;
+  document.querySelectorAll("#discountTypeRow .catbtn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+
+  const valueField = document.getElementById("discountValueField");
+  const label = document.getElementById("discountValueLabel");
+  if (currentDiscountType === "half") {
+    valueField.style.display = "none";
+  } else {
+    valueField.style.display = "block";
+    label.textContent = currentDiscountType === "percent" ? "割引率(%)" : "引かれる金額(円)";
+    document.getElementById("discountValue").placeholder = currentDiscountType === "percent" ? "20" : "50";
+  }
+  calcDiscountPrice();
+});
+
+function calcDiscountPrice() {
+  const original = parseFloat(document.getElementById("originalPrice").value);
+  const calcEl = document.getElementById("discountCalc");
+  if (!original) { calcEl.textContent = ""; return; }
+
+  let finalPrice, label;
+  if (currentDiscountType === "percent") {
+    const pct = parseFloat(document.getElementById("discountValue").value);
+    if (isNaN(pct)) { calcEl.textContent = ""; return; }
+    finalPrice = Math.round(original * (100 - pct) / 100);
+    label = `${pct}%引き`;
+  } else if (currentDiscountType === "amount") {
+    const amt = parseFloat(document.getElementById("discountValue").value);
+    if (isNaN(amt)) { calcEl.textContent = ""; return; }
+    finalPrice = Math.max(0, original - amt);
+    label = `${amt}円引き`;
+  } else {
+    finalPrice = Math.round(original / 2);
+    label = "半額";
+  }
+  document.getElementById("price").value = finalPrice;
+  calcEl.textContent = `${original}円 → ${finalPrice}円 (${label})`;
+  updatePreview();
+}
+
+["originalPrice", "discountValue"].forEach(id => {
+  document.getElementById(id).addEventListener("input", calcDiscountPrice);
+});
+
+document.getElementById("catRow").addEventListener("click", (e) => {
+  const btn = e.target.closest(".catbtn");
+  if (!btn) return;
+  currentCat = btn.dataset.cat;
+  document.querySelectorAll("#catRow .catbtn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  if (currentCat === "肉" || currentCat === "魚") setUnit("g");
+  updatePreview();
+});
+
+document.getElementById("unitGrid").addEventListener("click", (e) => {
+  const btn = e.target.closest(".unitbtn");
+  if (!btn) return;
+  setUnit(btn.dataset.unit);
+});
+
+function setUnit(unit) {
+  currentUnit = unit;
+  document.querySelectorAll(".unitbtn").forEach(b => b.classList.toggle("active", b.dataset.unit === unit));
+  updatePreview();
+}
+
+["price", "qty", "itemName", "groupName"].forEach(id => {
+  document.getElementById(id).addEventListener("input", updatePreview);
+});
+
+function updatePreview() {
+  const price = parseFloat(document.getElementById("price").value);
+  const qty = parseFloat(document.getElementById("qty").value);
+  const itemName = document.getElementById("itemName").value.trim();
+  const groupName = document.getElementById("groupName").value.trim() || itemName;
+  const preview = document.getElementById("preview");
+
+  if (!price || !qty) {
+    preview.style.display = "none";
+    return;
+  }
+  const unitPrice = computeUnitPrice(price, qty, currentUnit);
+  if (unitPrice === null) { preview.style.display = "none"; return; }
+
+  preview.style.display = "block";
+  document.getElementById("previewPrice").textContent = `${fmt(unitPrice)}円`;
+  document.getElementById("previewLabel").textContent = unitLabel(currentUnit);
+
+  const badgeEl = document.getElementById("previewBadge");
+  const hintEl = document.getElementById("previewHint");
+  badgeEl.innerHTML = "";
+  hintEl.textContent = "";
+
+  if (groupName) {
+    const key = normUnitKey(currentUnit);
+    const history = entries.filter(e => (e.groupName || e.itemName) === groupName && normUnitKey(e.unit) === key);
+    if (history.length > 0) {
+      const prices = history.map(e => e.unitPrice);
+      const min = Math.min(...prices);
+      const avg = prices.reduce((a,b) => a+b, 0) / prices.length;
+      let badgeClass = "warn", badgeText = "△ 割高かも";
+      if (unitPrice <= min * 1.02) { badgeClass = "good"; badgeText = "◎ 過去最安レベル!"; }
+      else if (unitPrice <= avg) { badgeClass = "mid"; badgeText = "○ まあまあお得"; }
+      badgeEl.innerHTML = `<span class="badge ${badgeClass}">${badgeText}</span>`;
+      hintEl.textContent = `過去の最安 ${fmt(min)}円 / 平均 ${fmt(avg)}円(${history.length}件の記録)`;
+    } else {
+      hintEl.textContent = "この商品の記録は初めて。次回から比較できるよ";
+    }
+  }
+}
+
+// ---- Save ----
+document.getElementById("saveBtn").addEventListener("click", async () => {
+  const itemName = document.getElementById("itemName").value.trim();
+  const groupName = document.getElementById("groupName").value.trim() || itemName;
+  const storeName = document.getElementById("storeName").value;
+  const storeGroup = (storeInfoMap[storeName] && storeInfoMap[storeName].storeGroup) || storeName;
+  const price = parseFloat(document.getElementById("price").value);
+  const qty = parseFloat(document.getElementById("qty").value);
+  const memo = document.getElementById("memo").value.trim();
+  const isDiscount = document.getElementById("discountToggle").checked;
+  let originalPrice = null, discountType = null, discountValue = null, discountLabel = null;
+  if (isDiscount) {
+    originalPrice = parseFloat(document.getElementById("originalPrice").value) || null;
+    discountType = currentDiscountType;
+    if (discountType === "half") {
+      discountLabel = "半額";
+    } else {
+      discountValue = parseFloat(document.getElementById("discountValue").value) || null;
+      discountLabel = discountType === "percent" ? `${discountValue}%引き` : `${discountValue}円引き`;
+    }
+  }
+
+  if (!itemName || !storeName || !price || !qty) {
+    alert("商品名・お店・価格・数量をすべて入力してね");
+    return;
+  }
+  const unitPrice = computeUnitPrice(price, qty, currentUnit);
+
+  if (editingId) {
+    const idx = entries.findIndex(en => en.id === editingId);
+    if (idx !== -1) {
+      entries[idx] = {
+        ...entries[idx],
+        itemName, groupName, storeName, storeGroup,
+        category: currentCat,
+        price, qty, unit: currentUnit,
+        unitPrice, unitKey: normUnitKey(currentUnit),
+        label: unitLabel(currentUnit),
+        memo, originalPrice, discountType, discountValue, discountLabel,
+      };
+    }
+    resetEditState();
+  } else {
+    entries.push({
+      id: Date.now().toString(),
+      itemName, groupName, storeName, storeGroup,
+      category: currentCat,
+      price, qty, unit: currentUnit,
+      unitPrice, unitKey: normUnitKey(currentUnit),
+      label: unitLabel(currentUnit),
+      memo, originalPrice, discountType, discountValue, discountLabel,
+      date: todayStr(),
+      ts: Date.now()
+    });
+  }
+
+  await saveEntries();
+
+  document.getElementById("storeName").value = "";
+  document.getElementById("itemName").value = "";
+  document.getElementById("groupName").value = "";
+  document.getElementById("price").value = "";
+  document.getElementById("qty").value = "";
+  document.getElementById("memo").value = "";
+  document.getElementById("discountToggle").checked = false;
+  document.getElementById("discountFields").style.display = "none";
+  document.getElementById("originalPrice").value = "";
+  document.getElementById("discountValue").value = "";
+  document.getElementById("discountCalc").textContent = "";
+  document.getElementById("price").readOnly = false;
+  document.getElementById("price").style.background = "";
+  document.getElementById("preview").style.display = "none";
+
+  renderAll();
+  switchView("list");
+});
+
+document.getElementById("cancelEditBtn").addEventListener("click", () => {
+  resetEditState();
+  document.getElementById("storeName").value = "";
+  document.getElementById("itemName").value = "";
+  document.getElementById("groupName").value = "";
+  document.getElementById("price").value = "";
+  document.getElementById("qty").value = "";
+  document.getElementById("memo").value = "";
+  document.getElementById("discountToggle").checked = false;
+  document.getElementById("discountFields").style.display = "none";
+  document.getElementById("originalPrice").value = "";
+  document.getElementById("discountValue").value = "";
+  document.getElementById("discountCalc").textContent = "";
+  document.getElementById("price").readOnly = false;
+  document.getElementById("price").style.background = "";
+  document.getElementById("preview").style.display = "none";
+});
+
+function resetEditState() {
+  editingId = null;
+  document.getElementById("saveBtn").textContent = "この価格を記録する";
+  document.getElementById("cancelEditBtn").style.display = "none";
+}
+
+function startEdit(entry) {
+  editingId = entry.id;
+  populateStoreSelect();
+  document.getElementById("storeName").value = entry.storeName;
+  document.getElementById("itemName").value = entry.itemName;
+  document.getElementById("groupName").value = (entry.groupName && entry.groupName !== entry.itemName) ? entry.groupName : "";
+  document.getElementById("price").value = entry.price;
+  document.getElementById("qty").value = entry.qty;
+  document.getElementById("memo").value = entry.memo || "";
+
+  // discountType covers new-format entries; discountPercent is kept for entries saved before this update
+  const legacyPercent = entry.discountPercent;
+  if (entry.discountType || legacyPercent) {
+    document.getElementById("discountToggle").checked = true;
+    document.getElementById("discountFields").style.display = "block";
+    document.getElementById("originalPrice").value = entry.originalPrice || "";
+    currentDiscountType = entry.discountType || "percent";
+    document.querySelectorAll("#discountTypeRow .catbtn").forEach(b => b.classList.toggle("active", b.dataset.dtype === currentDiscountType));
+    const valueField = document.getElementById("discountValueField");
+    const label = document.getElementById("discountValueLabel");
+    if (currentDiscountType === "half") {
+      valueField.style.display = "none";
+    } else {
+      valueField.style.display = "block";
+      label.textContent = currentDiscountType === "percent" ? "割引率(%)" : "引かれる金額(円)";
+      document.getElementById("discountValue").value = entry.discountValue || legacyPercent || "";
+    }
+    document.getElementById("price").readOnly = true;
+    document.getElementById("price").style.background = "#F0EEE8";
+    calcDiscountPrice();
+  } else {
+    document.getElementById("discountToggle").checked = false;
+    document.getElementById("discountFields").style.display = "none";
+    document.getElementById("price").readOnly = false;
+    document.getElementById("price").style.background = "";
+  }
+
+  currentCat = entry.category;
+  document.querySelectorAll("#catRow .catbtn").forEach(b => b.classList.toggle("active", b.dataset.cat === currentCat));
+  setUnit(entry.unit);
+
+  document.getElementById("saveBtn").textContent = "この内容で更新する";
+  document.getElementById("cancelEditBtn").style.display = "block";
+
+  switchView("add");
+  updatePreview();
+}
+
+function copyEntry(entry) {
+  resetEditState(); // ensure we're in "add new" mode, not editing the original
+  populateStoreSelect();
+  document.getElementById("storeName").value = entry.storeName;
+  document.getElementById("itemName").value = entry.itemName;
+  document.getElementById("groupName").value = (entry.groupName && entry.groupName !== entry.itemName) ? entry.groupName : "";
+  document.getElementById("qty").value = entry.qty;
+  document.getElementById("memo").value = entry.memo || "";
+
+  // Price and discount are left blank/off since those are the details most likely to change on a repeat purchase
+  document.getElementById("price").value = "";
+  document.getElementById("discountToggle").checked = false;
+  document.getElementById("discountFields").style.display = "none";
+  document.getElementById("price").readOnly = false;
+  document.getElementById("price").style.background = "";
+
+  currentCat = entry.category;
+  document.querySelectorAll("#catRow .catbtn").forEach(b => b.classList.toggle("active", b.dataset.cat === currentCat));
+  setUnit(entry.unit);
+
+  switchView("add");
+  document.getElementById("preview").style.display = "none";
+}
+
+// ---- Tabs ----
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => switchView(tab.dataset.view));
+});
+function switchView(view) {
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.view === view));
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  document.getElementById("view-" + view).classList.add("active");
+}
+
+// ---- List view ----
+document.getElementById("searchBox").addEventListener("input", renderList);
+
+document.getElementById("filterCatRow").addEventListener("click", (e) => {
+  const btn = e.target.closest(".catbtn");
+  if (!btn) return;
+  currentFilterCat = btn.dataset.fcat;
+  document.querySelectorAll("#filterCatRow .catbtn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  renderList();
+});
+
+function renderList() {
+  const q = document.getElementById("searchBox").value.trim().toLowerCase();
+  const container = document.getElementById("listContent");
+
+  if (entries.length === 0) {
+    container.innerHTML = `<div class="empty">まだ記録がないよ。<br>「記録する」タブから追加してね</div>`;
+    return;
+  }
+
+  const groups = {};
+  entries.forEach(e => {
+    if (q && !e.itemName.toLowerCase().includes(q) && !(e.groupName || "").toLowerCase().includes(q)) return;
+    if (currentFilterCat !== "全て" && e.category !== currentFilterCat) return;
+    const gName = e.groupName || e.itemName;
+    const key = gName + "|" + e.unitKey;
+    if (!groups[key]) groups[key] = { groupName: gName, label: e.label, list: [] };
+    groups[key].list.push(e);
+  });
+
+  const groupKeys = Object.keys(groups).sort((a,b) => groups[a].groupName.localeCompare(groups[b].groupName, 'ja'));
+
+  if (groupKeys.length === 0) {
+    container.innerHTML = `<div class="empty">見つからなかった</div>`;
+    return;
+  }
+
+  container.innerHTML = groupKeys.map(key => {
+    const g = groups[key];
+    g.list.sort((a,b) => a.unitPrice - b.unitPrice);
+    const min = g.list[0].unitPrice;
+    const isExpanded = expandedGroups.has(key);
+    const visibleList = isExpanded ? g.list : g.list.slice(0, 1);
+    const rows = visibleList.map(e => {
+      const isBest = e.unitPrice === min;
+      const showVariant = e.itemName !== g.groupName;
+      return `<div class="entry-row ${isBest ? 'best' : ''}" data-id="${e.id}" style="cursor:pointer;">
+        <div class="entry-left">
+          <span class="entry-store"><span class="crown">${isBest ? '👑' : ''}</span>${escapeHtml(e.storeName)}</span>
+          <span class="entry-date">${e.date}</span>
+          ${showVariant ? `<div style="font-size:11px;color:var(--sub);margin-top:2px;">${escapeHtml(e.itemName)}</div>` : ''}
+          ${e.memo ? `<div style="font-size:11px;color:var(--sub);margin-top:2px;">${escapeHtml(e.memo)}</div>` : ''}
+        </div>
+        <div style="display:flex; align-items:center; gap:6px;">
+          <div class="entry-right">
+            ${fmt(e.unitPrice)}円
+            <small>${e.price}円/${e.qty}${e.unit}${(e.discountLabel || e.discountPercent) ? ` <span style="color:var(--warn);">(${e.discountLabel || (e.discountPercent + '%引き')})</span>` : ''}</small>
+          </div>
+          <span class="copy-x" data-copy-id="${e.id}">⧉</span>
+          <span class="delete-x" data-id="${e.id}">×</span>
+        </div>
+      </div>`;
+    }).join("");
+    const moreBtn = g.list.length > 1
+      ? `<div class="entry-row" data-expand-key="${escapeHtml(key)}" style="cursor:pointer; justify-content:center; color:var(--accent); font-weight:700; font-size:12.5px;">
+          ${isExpanded ? '閉じる' : `他${g.list.length - 1}件を見る`}
+        </div>`
+      : "";
+    return `<div class="item-group">
+      <h3>${escapeHtml(g.groupName)} <span style="font-size:11px;color:var(--sub);font-weight:400;">(${g.label})</span></h3>
+      ${rows}
+      ${moreBtn}
+    </div>`;
+  }).join("");
+
+  container.querySelectorAll(".delete-x").forEach(el => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      showConfirm("この記録を削除する?", async () => {
+        entries = entries.filter(en => en.id !== el.dataset.id);
+        await saveEntries();
+        renderAll();
+      });
+    });
+  });
+
+  container.querySelectorAll(".copy-x").forEach(el => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const entry = entries.find(en => en.id === el.dataset.copyId);
+      if (entry) copyEntry(entry);
+    });
+  });
+
+  container.querySelectorAll(".entry-row[data-id]").forEach(row => {
+    row.addEventListener("click", (e) => {
+      if (e.target.closest(".delete-x") || e.target.closest(".copy-x")) return;
+      const entry = entries.find(en => en.id === row.dataset.id);
+      if (entry) startEdit(entry);
+    });
+  });
+
+  container.querySelectorAll("[data-expand-key]").forEach(el => {
+    el.addEventListener("click", () => {
+      const key = el.dataset.expandKey;
+      if (expandedGroups.has(key)) expandedGroups.delete(key);
+      else expandedGroups.add(key);
+      renderList();
+    });
+  });
+}
+
+// ---- Store comparison view ----
+document.getElementById("storeFilterCatRow").addEventListener("click", (e) => {
+  const btn = e.target.closest(".catbtn");
+  if (!btn) return;
+  currentStoreFilterCat = btn.dataset.fcat;
+  document.querySelectorAll("#storeFilterCatRow .catbtn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  renderStoreView();
+});
+
+function currentStoreGroup(e) {
+  const info = storeInfoMap[e.storeName];
+  if (info && info.storeGroup && info.storeGroup.trim()) return info.storeGroup.trim();
+  return e.storeGroup || e.storeName;
+}
+
+function renderStoreView() {
+  const container = document.getElementById("storeContent");
+  const rankingEl = document.getElementById("storeRanking");
+
+  if (entries.length === 0) {
+    rankingEl.innerHTML = "";
+    container.innerHTML = `<div class="empty">まだ記録がないよ</div>`;
+    return;
+  }
+
+  const filtered = entries.filter(e => currentStoreFilterCat === "全て" || e.category === currentStoreFilterCat);
+
+  if (filtered.length === 0) {
+    rankingEl.innerHTML = "";
+    container.innerHTML = `<div class="empty">このカテゴリの記録はまだないよ</div>`;
+    return;
+  }
+
+  const groups = {};
+  filtered.forEach(e => {
+    const gName = e.groupName || e.itemName;
+    const sName = currentStoreGroup(e);
+    const key = gName + "|" + e.unitKey;
+    if (!groups[key]) groups[key] = { groupName: gName, label: e.label, byStore: {} };
+    const cur = groups[key].byStore[sName];
+    if (!cur || e.unitPrice < cur.unitPrice) groups[key].byStore[sName] = e;
+  });
+
+  const groupKeys = Object.keys(groups).sort((a,b) => groups[a].groupName.localeCompare(groups[b].groupName, 'ja'));
+
+  // Ranking: count how many items each store (group) wins
+  const winCounts = {};
+  groupKeys.forEach(key => {
+    const list = Object.values(groups[key].byStore).sort((a,b) => a.unitPrice - b.unitPrice);
+    const winner = currentStoreGroup(list[0]);
+    winCounts[winner] = (winCounts[winner] || 0) + 1;
+  });
+  const ranked = Object.entries(winCounts).sort((a,b) => b[1] - a[1]);
+  const medals = ["🥇", "🥈", "🥉"];
+  if (ranked.length > 0) {
+    rankingEl.innerHTML = `<div class="card">
+      <label style="display:block; font-size:12.5px; color:var(--sub); margin-bottom:8px; font-weight:600;">お店の総合ランキング(最安獲得数)</label>
+      ${(rankingExpanded ? ranked : ranked.slice(0, 3)).map(([store, count], i) => `<div class="entry-row" style="${i===0 ? 'border-color:var(--accent); background:var(--accent-soft);' : ''}">
+        <div class="entry-left"><span class="entry-store">${medals[i] || `${i+1}.`} ${escapeHtml(store)}</span></div>
+        <div class="entry-right">${count}品目</div>
+      </div>`).join("")}
+      ${ranked.length > 3 ? `<div class="entry-row" id="rankingToggle" style="cursor:pointer; justify-content:center; color:var(--accent); font-weight:700; font-size:12.5px;">
+        ${rankingExpanded ? '閉じる' : `他${ranked.length - 3}件を見る`}
+      </div>` : ""}
+    </div>`;
+  } else {
+    rankingEl.innerHTML = "";
+  }
+
+  const rankingToggleEl = document.getElementById("rankingToggle");
+  if (rankingToggleEl) {
+    rankingToggleEl.addEventListener("click", () => {
+      rankingExpanded = !rankingExpanded;
+      renderStoreView();
+    });
+  }
+
+  container.innerHTML = "";
+  const groupAllPrices = {};
+  filtered.forEach(e => {
+    const gName = e.groupName || e.itemName;
+    const key = gName + "|" + e.unitKey;
+    if (!groupAllPrices[key]) groupAllPrices[key] = [];
+    groupAllPrices[key].push(e.unitPrice);
+  });
+
+  const storeMap = {};
+  groupKeys.forEach(key => {
+    const g = groups[key];
+    const list = Object.values(g.byStore);
+    const min = Math.min(...list.map(e => e.unitPrice));
+    const prices = groupAllPrices[key];
+    const avg = prices.reduce((a,b) => a+b, 0) / prices.length;
+    list.forEach(e => {
+      const sName = currentStoreGroup(e);
+      if (!storeMap[sName]) storeMap[sName] = [];
+      storeMap[sName].push({
+        groupName: g.groupName,
+        label: g.label,
+        unitPrice: e.unitPrice,
+        isBest: e.unitPrice === min,
+        entryId: e.id,
+        avgPrice: avg
+      });
+    });
+  });
+
+  const storeNames = Object.keys(storeMap).sort((a,b) => a.localeCompare(b, 'ja'));
+
+  container.innerHTML = storeNames.map(store => {
+    const items = storeMap[store].sort((a,b) => {
+      if (a.isBest !== b.isBest) return a.isBest ? -1 : 1;
+      return a.groupName.localeCompare(b.groupName, 'ja');
+    });
+    const bestCount = items.filter(it => it.isBest).length;
+    const isExpanded = expandedGroups.has(store);
+    const rows = isExpanded ? items.map(it => `<div class="entry-row ${it.isBest ? 'best' : ''}" data-entry-id="${it.entryId}" style="cursor:pointer;">
+      <div class="entry-left">
+        <span class="entry-store"><span class="crown">${it.isBest ? '👑' : ''}</span>${escapeHtml(it.groupName)}</span>
+        <span class="entry-date">${it.label}</span>
+      </div>
+      <div class="entry-right">${fmt(it.unitPrice)}円<small>平均${fmt(it.avgPrice)}円</small></div>
+    </div>`).join("") : "";
+    return `<div class="item-group">
+      <h3 data-expand-key="${escapeHtml(store)}" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
+        <span>${escapeHtml(store)} <span style="font-size:11px;color:var(--sub);font-weight:400;">(${items.length}品目・${bestCount}品目で最安)</span></span>
+        <span style="color:var(--sub); font-size:13px;">${isExpanded ? '▲' : '▼'}</span>
+      </h3>
+      ${rows}
+    </div>`;
+  }).join("");
+
+  container.querySelectorAll("[data-expand-key]").forEach(el => {
+    el.addEventListener("click", () => {
+      const key = el.dataset.expandKey;
+      if (expandedGroups.has(key)) expandedGroups.delete(key);
+      else expandedGroups.add(key);
+      renderStoreView();
+    });
+  });
+
+  container.querySelectorAll("[data-entry-id]").forEach(el => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const entry = entries.find(en => en.id === el.dataset.entryId);
+      if (entry) startEdit(entry);
+    });
+  });
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+function updateDatalists() {
+  // datalist elements removed in favor of the custom tap-friendly suggestion dropdowns (setupAutocomplete)
+}
+
+function setupAutocomplete(inputId, dropdownId, getOptions) {
+  const input = document.getElementById(inputId);
+  const dropdown = document.getElementById(dropdownId);
+
+  function show() {
+    const q = input.value.trim().toLowerCase();
+    const options = getOptions();
+    const filtered = q
+      ? options.filter(o => o.toLowerCase().includes(q) && o.toLowerCase() !== q)
+      : options;
+    if (filtered.length === 0) { dropdown.style.display = "none"; return; }
+    dropdown.innerHTML = filtered.slice(0, 8).map(o => `<div class="suggest-item" data-val="${escapeHtml(o)}">${escapeHtml(o)}</div>`).join("");
+    dropdown.style.display = "block";
+  }
+
+  input.addEventListener("focus", show);
+  input.addEventListener("input", show);
+  input.addEventListener("blur", () => setTimeout(() => { dropdown.style.display = "none"; }, 150));
+
+  dropdown.addEventListener("click", (e) => {
+    const item = e.target.closest(".suggest-item");
+    if (!item) return;
+    input.value = item.dataset.val;
+    dropdown.style.display = "none";
+    input.dispatchEvent(new Event("input"));
+  });
+}
+
+setupAutocomplete("itemName", "itemNameSuggest", () => [...new Set(entries.map(e => e.itemName))]);
+setupAutocomplete("groupName", "groupNameSuggest", () => [...new Set(entries.map(e => e.groupName || e.itemName))]);
+
+function populateStoreSelect() {
+  const sel = document.getElementById("storeName");
+  const names = Object.keys(storeInfoMap).sort((a,b) => a.localeCompare(b, 'ja'));
+  const current = sel.value;
+  sel.innerHTML = `<option value="">お店を選択</option>` + names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join("");
+  if (names.includes(current)) sel.value = current;
+}
+
+function renderAll() {
+  renderList();
+  renderStoreView();
+  updateDatalists();
+  populateStoreSelect();
+}
+
+// ---- Backup: export / import ----
+document.getElementById("exportBtn").addEventListener("click", () => {
+  const backup = { entries, storeInfo: storeInfoMap };
+  document.getElementById("exportArea").value = JSON.stringify(backup);
+  document.getElementById("exportArea").select();
+});
+
+document.getElementById("importBtn").addEventListener("click", async () => {
+  const raw = document.getElementById("importArea").value.trim();
+  if (!raw) { alert("貼り付け欄が空だよ"); return; }
+  let incoming;
+  try {
+    incoming = JSON.parse(raw);
+  } catch (e) {
+    alert("読み込めなかった。バックアップからコピーした内容そのままか確認してね");
+    return;
+  }
+
+  // Support both the new format ({entries, storeInfo}) and the old format (a plain array of entries)
+  const incomingEntries = Array.isArray(incoming) ? incoming : (incoming.entries || []);
+  const incomingStoreInfo = Array.isArray(incoming) ? {} : (incoming.storeInfo || {});
+
+  const existingIds = new Set(entries.map(e => e.id));
+  let addedEntries = 0;
+  incomingEntries.forEach(e => {
+    if (e && e.id && !existingIds.has(e.id)) {
+      entries.push(e);
+      existingIds.add(e.id);
+      addedEntries++;
+    }
+  });
+
+  let addedStores = 0;
+  Object.keys(incomingStoreInfo).forEach(name => {
+    if (!(name in storeInfoMap)) addedStores++;
+    storeInfoMap[name] = incomingStoreInfo[name];
+  });
+
+  await saveEntries();
+  await saveStoreInfo();
+  renderAll();
+  renderStoreInfoList();
+  populateStoreSelect();
+  updateStoreGroupDatalist();
+  document.getElementById("importArea").value = "";
+  alert(`記録${addedEntries}件・店舗情報${addedStores}件を読み込んだよ`);
+  switchView("list");
+});
+
+// ---- Store info ----
+let storeInfoMap = {};
+let currentParking = "不明";
+let editingStoreKey = null;
+const STOREINFO_KEY = "grocery-storeinfo-v1";
+
+async function loadStoreInfo() {
+  try {
+    const value = await sheetGet(STOREINFO_KEY);
+    storeInfoMap = value ? JSON.parse(value) : {};
+  } catch (e) {
+    console.error("読み込みエラー:", e);
+    storeInfoMap = {};
+  }
+  renderStoreInfoList();
+  populateStoreSelect();
+  updateStoreGroupDatalist();
+}
+
+async function saveStoreInfo() {
+  try {
+    await sheetSet(STOREINFO_KEY, JSON.stringify(storeInfoMap));
+  } catch (e) {
+    console.error("Storage error:", e);
+  }
+}
+
+document.getElementById("siParkingRow").addEventListener("click", (e) => {
+  const btn = e.target.closest(".catbtn");
+  if (!btn) return;
+  currentParking = btn.dataset.parking;
+  document.querySelectorAll("#siParkingRow .catbtn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+});
+
+function resetStoreInfoForm() {
+  editingStoreKey = null;
+  document.getElementById("siStoreName").value = "";
+  document.getElementById("siStoreGroup").value = "";
+  document.getElementById("siAddress").value = "";
+  document.getElementById("siOpenTime").value = "";
+  document.getElementById("siCloseTime").value = "";
+  document.getElementById("siMemo").value = "";
+  currentParking = "不明";
+  document.querySelectorAll("#siParkingRow .catbtn").forEach(b => b.classList.toggle("active", b.dataset.parking === "不明"));
+  document.getElementById("siSaveBtn").textContent = "この店舗情報を保存";
+  document.getElementById("siCancelBtn").style.display = "none";
+}
+
+document.getElementById("siSaveBtn").addEventListener("click", async () => {
+  const storeName = document.getElementById("siStoreName").value.trim();
+  if (!storeName) { alert("店舗名を入力してね"); return; }
+  const storeGroup = document.getElementById("siStoreGroup").value.trim() || storeName;
+  const address = document.getElementById("siAddress").value.trim();
+  const open = document.getElementById("siOpenTime").value;
+  const close = document.getElementById("siCloseTime").value;
+  const memo = document.getElementById("siMemo").value.trim();
+
+  if (editingStoreKey && editingStoreKey !== storeName) {
+    delete storeInfoMap[editingStoreKey];
+  }
+  storeInfoMap[storeName] = { storeGroup, address, hours: { open, close }, parking: currentParking, memo };
+  await saveStoreInfo();
+  resetStoreInfoForm();
+  renderStoreInfoList();
+  populateStoreSelect();
+  updateStoreGroupDatalist();
+});
+
+document.getElementById("siCancelBtn").addEventListener("click", resetStoreInfoForm);
+
+function updateStoreGroupDatalist() {
+  const groupsSet = [...new Set(Object.values(storeInfoMap).map(i => i.storeGroup).filter(Boolean))];
+  document.getElementById("siStoreGroupList").innerHTML = groupsSet.map(g => `<option value="${escapeHtml(g)}">`).join("");
+}
+
+function startEditStoreInfo(storeName) {
+  const info = storeInfoMap[storeName];
+  if (!info) return;
+  editingStoreKey = storeName;
+  document.getElementById("siStoreName").value = storeName;
+  document.getElementById("siStoreGroup").value = (info.storeGroup && info.storeGroup !== storeName) ? info.storeGroup : "";
+  document.getElementById("siAddress").value = info.address || "";
+  document.getElementById("siOpenTime").value = (info.hours && info.hours.open) || "";
+  document.getElementById("siCloseTime").value = (info.hours && info.hours.close) || "";
+  document.getElementById("siMemo").value = info.memo || "";
+  currentParking = info.parking || "不明";
+  document.querySelectorAll("#siParkingRow .catbtn").forEach(b => b.classList.toggle("active", b.dataset.parking === currentParking));
+  document.getElementById("siSaveBtn").textContent = "この内容で更新する";
+  document.getElementById("siCancelBtn").style.display = "block";
+}
+
+function renderStoreInfoList() {
+  const container = document.getElementById("storeInfoList");
+  const names = Object.keys(storeInfoMap);
+  if (names.length === 0) {
+    container.innerHTML = `<div class="empty">まだ店舗情報が登録されてないよ。<br>上のフォームから追加してね</div>`;
+    return;
+  }
+
+  const groups = {};
+  names.forEach(name => {
+    const info = storeInfoMap[name];
+    const gName = (info.storeGroup && info.storeGroup.trim()) || name;
+    if (!groups[gName]) groups[gName] = [];
+    groups[gName].push(name);
+  });
+  const groupKeys = Object.keys(groups).sort((a,b) => a.localeCompare(b, 'ja'));
+
+  container.innerHTML = groupKeys.map(gName => {
+    const storeNames = groups[gName].sort((a,b) => a.localeCompare(b, 'ja'));
+    const rows = storeNames.map(name => {
+      const info = storeInfoMap[name];
+      const lines = [];
+      if (info.address) {
+        const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(info.address)}`;
+        lines.push(`📍 <a href="${mapUrl}" target="_blank" rel="noopener" style="color:var(--accent); text-decoration:underline;" onclick="event.stopPropagation()">${escapeHtml(info.address)}</a>`);
+      }
+      if (info.hours && (info.hours.open || info.hours.close)) {
+        lines.push(`🕐 ${escapeHtml(info.hours.open || '?')}〜${escapeHtml(info.hours.close || '?')}`);
+      }
+      if (info.parking && info.parking !== "不明") lines.push(`🚗 駐車場: ${escapeHtml(info.parking)}`);
+      if (info.memo) lines.push(`💬 ${escapeHtml(info.memo)}`);
+      return `<div class="entry-row" data-store-key="${escapeHtml(name)}" style="cursor:pointer; align-items:flex-start; flex-direction:column;">
+        <div style="display:flex; justify-content:space-between; width:100%;">
+          <span class="entry-store">${escapeHtml(name)}</span>
+          <span class="copy-x" data-store-copy="${escapeHtml(name)}">⧉</span>
+          <span class="delete-x" data-store-del="${escapeHtml(name)}">×</span>
+        </div>
+        ${lines.length ? `<div style="font-size:12px; color:var(--sub); margin-top:4px; line-height:1.6;">${lines.join("<br>")}</div>` : ''}
+      </div>`;
+    }).join("");
+    return `<div class="item-group">
+      <h3>${escapeHtml(gName)} <span style="font-size:11px;color:var(--sub);font-weight:400;">(${storeNames.length}店舗)</span></h3>
+      ${rows}
+    </div>`;
+  }).join("");
+
+  container.querySelectorAll("[data-store-del]").forEach(el => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      showConfirm("この店舗情報を削除する?", async () => {
+        delete storeInfoMap[el.dataset.storeDel];
+        await saveStoreInfo();
+        renderStoreInfoList();
+        populateStoreSelect();
+        updateStoreGroupDatalist();
+      });
+    });
+  });
+
+  container.querySelectorAll("[data-store-copy]").forEach(el => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      copyStoreInfo(el.dataset.storeCopy);
+    });
+  });
+
+  container.querySelectorAll("[data-store-key]").forEach(el => {
+    el.addEventListener("click", () => startEditStoreInfo(el.dataset.storeKey));
+  });
+}
+
+function copyStoreInfo(name) {
+  const info = storeInfoMap[name];
+  if (!info) return;
+  editingStoreKey = null;
+  document.getElementById("siStoreName").value = "";
+  document.getElementById("siStoreGroup").value = (info.storeGroup && info.storeGroup !== name) ? info.storeGroup : name;
+  document.getElementById("siAddress").value = info.address || "";
+  document.getElementById("siOpenTime").value = (info.hours && info.hours.open) || "";
+  document.getElementById("siCloseTime").value = (info.hours && info.hours.close) || "";
+  document.getElementById("siMemo").value = info.memo || "";
+  currentParking = info.parking || "不明";
+  document.querySelectorAll("#siParkingRow .catbtn").forEach(b => b.classList.toggle("active", b.dataset.parking === currentParking));
+  document.getElementById("siSaveBtn").textContent = "この店舗情報を保存";
+  document.getElementById("siCancelBtn").style.display = "none";
+  document.getElementById("siStoreName").focus();
+}
+
+loadEntries();
+loadStoreInfo();
+</script>
+
+</body>
+</html>
