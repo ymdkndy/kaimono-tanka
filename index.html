@@ -39,12 +39,45 @@
     font-size: 19px;
     margin: 0 0 2px;
     font-weight: 700;
+    padding-right: 40px;
   }
   header p {
     margin: 0;
     font-size: 12.5px;
     color: var(--sub);
   }
+  #settingsBtn {
+    position: absolute;
+    top: 20px;
+    right: 18px;
+    background: none;
+    border: none;
+    font-size: 20px;
+    padding: 4px;
+    line-height: 1;
+  }
+  #settingsMenu {
+    display: none;
+    position: absolute;
+    top: 52px;
+    right: 18px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    z-index: 20;
+    overflow: hidden;
+    min-width: 150px;
+  }
+  #settingsMenu.open { display: block; }
+  .settings-item {
+    padding: 12px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    border-bottom: 1px solid var(--line);
+  }
+  .settings-item:last-child { border-bottom: none; }
+  .settings-item:active { background: var(--accent-soft); }
   main { padding: 4px 16px 20px; max-width: 480px; margin: 0 auto; }
 
   .card {
@@ -228,6 +261,11 @@
 <header>
   <h1>お買い物 単価チェッカー</h1>
   <p>入力すると自動で単価を計算・比較するよ</p>
+  <button id="settingsBtn" aria-label="設定">⚙️</button>
+  <div id="settingsMenu">
+    <div class="settings-item" data-view="storeinfo">🏬 店舗情報</div>
+    <div class="settings-item" data-view="backup">💾 バックアップ</div>
+  </div>
 </header>
 
 <main>
@@ -454,8 +492,6 @@
   <div class="tab active" data-view="add"><span class="icon">➕</span>記録する</div>
   <div class="tab" data-view="list"><span class="icon">📋</span>商品別</div>
   <div class="tab" data-view="store"><span class="icon">🏪</span>お店比較</div>
-  <div class="tab" data-view="storeinfo"><span class="icon">🏬</span>店舗情報</div>
-  <div class="tab" data-view="backup"><span class="icon">💾</span>バックアップ</div>
 </div>
 
 <div id="confirmOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:100; align-items:center; justify-content:center;">
@@ -875,7 +911,23 @@ function switchView(view) {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.view === view));
   document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
   document.getElementById("view-" + view).classList.add("active");
+  document.getElementById("settingsMenu").classList.remove("open");
 }
+
+// ---- Settings menu ----
+document.getElementById("settingsBtn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  document.getElementById("settingsMenu").classList.toggle("open");
+});
+document.querySelectorAll(".settings-item").forEach(item => {
+  item.addEventListener("click", () => switchView(item.dataset.view));
+});
+document.addEventListener("click", (e) => {
+  const menu = document.getElementById("settingsMenu");
+  if (!menu.contains(e.target) && e.target.id !== "settingsBtn") {
+    menu.classList.remove("open");
+  }
+});
 
 // ---- List view ----
 document.getElementById("searchBox").addEventListener("input", renderList);
