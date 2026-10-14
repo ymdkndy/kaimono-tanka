@@ -279,6 +279,7 @@
   <button id="settingsBtn" aria-label="設定">⚙️</button>
   <div id="settingsMenu">
     <div class="settings-item" data-view="storeinfo">🏬 店舗情報</div>
+    <div class="settings-item" data-view="tidy">🔤 表記ゆれをまとめる</div>
     <div class="settings-item" data-view="backup">💾 バックアップ</div>
   </div>
 </header>
@@ -300,12 +301,14 @@
         <label>商品名</label>
         <input type="text" id="itemName" lang="ja" autocomplete="off" placeholder="例: きゅうり、豚こま">
         <div id="itemNameSuggest" class="suggest-dropdown"></div>
+        <div class="hint" id="itemNameHint" style="display:none; color:var(--accent); font-weight:600;"></div>
       </div>
 
       <div class="field" style="position:relative;">
         <label>グループ名(任意)</label>
         <input type="text" id="groupName" lang="ja" autocomplete="off" placeholder="空欄なら商品名と同じ扱いになる">
         <div id="groupNameSuggest" class="suggest-dropdown"></div>
+        <div class="hint" id="groupNameHint" style="display:none; color:var(--accent); font-weight:600;"></div>
         <div class="hint">名前は違うけど同じ種類の商品(例:「とろ～りスライスチーズ」「とろけるスライスチーズ」→どちらも「スライスチーズ」)をまとめて比較したいときに使ってね</div>
       </div>
 
@@ -313,6 +316,7 @@
         <label>メーカー名(任意)</label>
         <input type="text" id="maker" lang="ja" autocomplete="off" placeholder="例: 明治、カゴメ">
         <div id="makerSuggest" class="suggest-dropdown"></div>
+        <div class="hint" id="makerHint" style="display:none; color:var(--accent); font-weight:600;"></div>
       </div>
 
       <div class="field">
@@ -329,6 +333,7 @@
           <div class="catbtn" data-cat="調味料" style="flex-basis: 30%;">🧂 調味料</div>
           <div class="catbtn" data-cat="お菓子" style="flex-basis: 30%;">🍪 お菓子</div>
           <div class="catbtn" data-cat="乳製品" style="flex-basis: 30%;">🥛 乳製品</div>
+          <div class="catbtn" data-cat="お酒" style="flex-basis: 30%;">🍺 お酒</div>
           <div class="catbtn" data-cat="冷凍食品" style="flex-basis: 30%;">🧊 冷凍食品</div>
           <div class="catbtn" data-cat="消耗品" style="flex-basis: 30%;">🧻 消耗品</div>
           <div class="catbtn" data-cat="その他" style="flex-basis: 30%;">🛒 その他</div>
@@ -369,7 +374,11 @@
         </div>
         <div>
           <label>数量</label>
-          <input type="number" id="qty" inputmode="decimal" placeholder="1">
+          <div style="position:relative;">
+            <input type="text" id="qty" inputmode="decimal" autocomplete="off" placeholder="1 (350×30 もOK)" style="padding-right:46px;">
+            <span id="qtyTimes" style="position:absolute; right:6px; top:50%; transform:translateY(-50%); width:34px; height:30px; line-height:30px; text-align:center; border-radius:8px; background:var(--accent-soft); color:var(--accent); font-weight:700; font-size:17px; cursor:pointer; user-select:none;">×</span>
+          </div>
+          <div class="hint" id="qtyCalc" style="display:none; color:var(--accent); font-weight:600;"></div>
         </div>
       </div>
 
@@ -387,6 +396,7 @@
           <div class="unitbtn" data-unit="袋">袋</div>
           <div class="unitbtn" data-unit="束">束</div>
         </div>
+        <div class="hint" id="unitHint" style="display:none; color:var(--accent); font-weight:600;"></div>
       </div>
 
       <div class="field">
@@ -421,11 +431,13 @@
       <div class="catbtn" data-fcat="調味料" style="flex-basis: 22%;">🧂 調味料</div>
       <div class="catbtn" data-fcat="お菓子" style="flex-basis: 22%;">🍪 お菓子</div>
       <div class="catbtn" data-fcat="乳製品" style="flex-basis: 22%;">🥛 乳製品</div>
+      <div class="catbtn" data-fcat="お酒" style="flex-basis: 22%;">🍺 お酒</div>
       <div class="catbtn" data-fcat="冷凍食品" style="flex-basis: 22%;">🧊 冷凍食品</div>
       <div class="catbtn" data-fcat="消耗品" style="flex-basis: 22%;">🧻 消耗品</div>
       <div class="catbtn" data-fcat="その他" style="flex-basis: 22%;">🛒 その他</div>
     </div>
-    <input type="text" class="search" id="searchBox" placeholder="商品名で検索...">
+    <input type="text" class="search" id="searchBox" placeholder="商品名・メーカーで検索...">
+    <select id="makerFilter" style="width:100%; margin-bottom:12px; padding:11px 12px; border-radius:10px; border:1px solid var(--line); background:#FCFAF7; font-size:15px; color:var(--ink); font-family:inherit; display:none;"></select>
     <div id="listContent"></div>
   </div>
 
@@ -444,12 +456,22 @@
       <div class="catbtn" data-fcat="調味料" style="flex-basis: 22%;">🧂 調味料</div>
       <div class="catbtn" data-fcat="お菓子" style="flex-basis: 22%;">🍪 お菓子</div>
       <div class="catbtn" data-fcat="乳製品" style="flex-basis: 22%;">🥛 乳製品</div>
+      <div class="catbtn" data-fcat="お酒" style="flex-basis: 22%;">🍺 お酒</div>
       <div class="catbtn" data-fcat="冷凍食品" style="flex-basis: 22%;">🧊 冷凍食品</div>
       <div class="catbtn" data-fcat="消耗品" style="flex-basis: 22%;">🧻 消耗品</div>
       <div class="catbtn" data-fcat="その他" style="flex-basis: 22%;">🛒 その他</div>
     </div>
     <div id="storeRanking"></div>
     <div id="storeContent"></div>
+  </div>
+  <!-- TIDY VIEW -->
+  <div class="view" id="view-tidy">
+    <div class="card">
+      <label style="display:block; font-size:12.5px; color:var(--sub); margin-bottom:5px; font-weight:600;">表記ゆれをまとめる</label>
+      <div class="hint" style="margin-bottom:10px;">「なす」「ナス」「 なす」のように、書き方だけ違う名前を探したよ。そろえたい書き方をタップして選んで、「そろえる」を押すと、過去の記録もまとめて書き換わるよ。</div>
+      <button class="bigbtn" id="tidyAllBtn">おすすめの書き方で全部そろえる</button>
+    </div>
+    <div id="tidyContent"></div>
   </div>
   <!-- BACKUP VIEW -->
   <div class="view" id="view-backup">
@@ -596,12 +618,16 @@ async function sheetGet(key) {
   return await sheetGetRaw(key); // data saved before chunking existed
 }
 
-async function sheetSet(key, value) {
+async function sheetSet(key, value, onProgress) {
   const chunks = [];
   for (let i = 0; i < value.length; i += CHUNK_SIZE) chunks.push(value.slice(i, i + CHUNK_SIZE));
   if (chunks.length === 0) chunks.push("");
-  for (let i = 0; i < chunks.length; i++) await sheetSetRaw(`${key}__${i}`, chunks[i]);
+  const total = chunks.length * 2 + 2; // writes + count + verify reads
+  let done = 0;
+  const tick = () => { done++; if (onProgress) onProgress(Math.min(99, Math.round(done / total * 100))); };
+  for (let i = 0; i < chunks.length; i++) { await sheetSetRaw(`${key}__${i}`, chunks[i]); tick(); }
   await sheetSetRaw(key + "__n", String(chunks.length)); // written last: switches readers to the new data
+  tick();
   const back = await sheetGet(key);
   if (back !== value) throw new Error("verify failed");
 }
@@ -639,6 +665,7 @@ async function loadEntries() {
     const value = await sheetGet(STORAGE_KEY);
     entries = value ? JSON.parse(value) : [];
     entriesLoaded = true;
+    recoverPending("entries");
   } catch (e) {
     console.error("読み込みエラー:", e);
     entries = [];
@@ -647,21 +674,257 @@ async function loadEntries() {
   renderAll();
 }
 
-async function saveEntries() {
-  if (!entriesLoaded) {
-    showStatus("⚠️ 読み込みができていないので保存しなかったよ。ページを再読み込みしてね", true);
-    return false;
-  }
-  const snapshot = JSON.stringify(entries);
+// ---- Save jobs: each save shows up in a small "保存中" list with its progress ----
+let saveJobs = [];
+let jobSeq = 0;
+let savePanelOpen = false;
+
+function ensureSaveUI() {
+  let chip = document.getElementById("saveChip");
+  if (chip) return;
+  chip = document.createElement("div");
+  chip.id = "saveChip";
+  chip.style.cssText = "position:fixed; right:12px; bottom:84px; z-index:900; display:none; padding:9px 14px; border-radius:20px; font-size:13px; font-weight:700; color:#fff; box-shadow:0 2px 10px rgba(0,0,0,.25); cursor:pointer;";
+  chip.addEventListener("click", () => { savePanelOpen = !savePanelOpen; renderSaveUI(); });
+  document.body.appendChild(chip);
+  const panel = document.createElement("div");
+  panel.id = "savePanel";
+  panel.style.cssText = "position:fixed; right:12px; bottom:128px; z-index:900; display:none; width:min(300px, 88vw); max-height:50vh; overflow:auto; padding:12px; border-radius:14px; background:#fff; border:1px solid #ddd; box-shadow:0 4px 18px rgba(0,0,0,.25); font-size:13px; color:#333;";
+  document.body.appendChild(panel);
+}
+
+function renderSaveUI() {
+  ensureSaveUI();
+  const chip = document.getElementById("saveChip");
+  const panel = document.getElementById("savePanel");
+  const active = saveJobs.filter(j => j.status === "wait" || j.status === "saving");
+  const failed = saveJobs.filter(j => j.status === "fail");
+  if (saveJobs.length === 0) { chip.style.display = "none"; panel.style.display = "none"; return; }
+  chip.style.display = "block";
+  if (failed.length) { chip.style.background = "#C0392B"; chip.textContent = `⚠️ 保存失敗 ${failed.length}件`; }
+  else if (active.length) { chip.style.background = "#B8741A"; chip.textContent = `☁️ 保存中 ${active.length}件`; }
+  else { chip.style.background = "#2E7D5B"; chip.textContent = "✓ 保存したよ"; }
+  panel.style.display = savePanelOpen ? "block" : "none";
+  if (!savePanelOpen) return;
+  const label = { wait: "順番待ち", saving: "保存中", done: "保存済み ✓", fail: "失敗" };
+  panel.innerHTML = `<div style="font-weight:700; margin-bottom:8px;">保存の状況</div>` + saveJobs.slice().reverse().map(j => {
+    const pct = j.status === "done" ? 100 : (j.status === "saving" ? j.pct : 0);
+    const color = j.status === "fail" ? "#C0392B" : (j.status === "done" ? "#2E7D5B" : "#B8741A");
+    return `<div style="margin-bottom:10px;">
+      <div style="display:flex; justify-content:space-between; gap:8px;"><span>${escapeHtml(j.label)}</span><span style="color:${color}; white-space:nowrap;">${label[j.status]}${j.status === "saving" ? " " + pct + "%" : ""}</span></div>
+      <div style="height:6px; border-radius:3px; background:#eee; margin-top:4px;"><div style="height:6px; border-radius:3px; width:${pct}%; background:${color};"></div></div>
+      ${j.status === "fail" ? `<div style="margin-top:4px;"><span data-retry-job="${j.id}" style="color:#C0392B; font-weight:700; cursor:pointer; text-decoration:underline;">もう一度保存する</span></div>` : ""}
+    </div>`;
+  }).join("");
+  panel.querySelectorAll("[data-retry-job]").forEach(el => {
+    el.addEventListener("click", () => {
+      const job = saveJobs.find(j => j.id === Number(el.dataset.retryJob));
+      if (job) runSaveJob(job);
+    });
+  });
+}
+
+function runSaveJob(job) {
+  job.status = "wait"; job.pct = 0;
+  renderSaveUI();
+  return queueSave(async () => {
+    job.status = "saving";
+    renderSaveUI();
+    try {
+      // serialize at run time so queued jobs always save the newest state
+      const ki = kindInfo(job.kind);
+      await sheetSet(ki.key, JSON.stringify(ki.get()), (p) => { job.pct = p; renderSaveUI(); });
+      job.status = "done";
+      clearPendingIfIdle(job.kind);
+      renderSaveUI();
+      setTimeout(() => {
+        saveJobs = saveJobs.filter(j => j !== job);
+        renderSaveUI();
+      }, 4000);
+      return true;
+    } catch (e) {
+      console.error("Storage error:", e);
+      job.status = "fail";
+      savePanelOpen = true;
+      renderSaveUI();
+      return false;
+    }
+  });
+}
+
+// kinds of data that get saved: entries / store info / app settings
+function kindInfo(kind) {
+  if (kind === "store") return { key: STOREINFO_KEY, get: () => storeInfoMap, loaded: () => storeInfoLoaded, title: "店舗情報" };
+  if (kind === "settings") return { key: SETTINGS_KEY, get: () => appSettings, loaded: () => settingsLoaded, title: "設定" };
+  return { key: STORAGE_KEY, get: () => entries, loaded: () => entriesLoaded, title: "記録" };
+}
+
+// ---- Safety copy on this device while a save is unfinished ----
+const PENDING_KEY = "grocery-pending-v1";
+function readPending() {
+  try { return JSON.parse(localStorage.getItem(PENDING_KEY) || "{}") || {}; } catch (e) { return {}; }
+}
+function writePending(obj) {
   try {
-    await queueSave(() => sheetSet(STORAGE_KEY, snapshot));
-    showStatus("保存したよ ✓", false);
-    return true;
+    if (Object.keys(obj).length === 0) localStorage.removeItem(PENDING_KEY);
+    else localStorage.setItem(PENDING_KEY, JSON.stringify(obj));
+  } catch (e) { /* storage unavailable: just skip the safety copy */ }
+}
+function stashPending(kind) {
+  const p = readPending();
+  p[kind] = JSON.stringify(kindInfo(kind).get());
+  writePending(p);
+}
+function clearPendingIfIdle(kind) {
+  const stillActive = saveJobs.some(j => j.kind === kind && (j.status === "wait" || j.status === "saving"));
+  if (stillActive) return;
+  const p = readPending();
+  delete p[kind];
+  writePending(p);
+}
+// After a reload: put back anything that never reached the sheet (adds/edits; deletions are not restored)
+function recoverPending(kind) {
+  const p = readPending();
+  if (!p[kind]) return;
+  try {
+    const saved = JSON.parse(p[kind]);
+    let count = 0;
+    if (kind === "settings") {
+      Object.keys(saved.mergeCount || {}).forEach(k => {
+        if (appSettings.mergeCount[k] !== saved.mergeCount[k]) { appSettings.mergeCount[k] = saved.mergeCount[k]; count++; }
+      });
+    } else if (kind === "store") {
+      Object.keys(saved).forEach(name => {
+        if (JSON.stringify(storeInfoMap[name]) !== JSON.stringify(saved[name])) { storeInfoMap[name] = saved[name]; count++; }
+      });
+    } else {
+      saved.forEach(en => {
+        const idx = entries.findIndex(x => x.id === en.id);
+        if (idx === -1) { entries.push(en); count++; }
+        else if (JSON.stringify(entries[idx]) !== JSON.stringify(en)) { entries[idx] = en; count++; }
+      });
+    }
+    if (count > 0) {
+      showStatus(`保存できていなかった${kindInfo(kind).title}${count}件を復元して、保存し直すね`, false);
+      startSave(kind, "復元した分");
+    } else {
+      delete p[kind];
+      writePending(p);
+    }
   } catch (e) {
-    console.error("Storage error:", e);
-    showStatus("⚠️ 保存できなかったかも。ページを再読み込みして記録が残っているか確認してね", true);
-    return false;
+    console.error("復元エラー:", e);
   }
+}
+
+window.addEventListener("beforeunload", (e) => {
+  if (saveJobs.some(j => j.status === "wait" || j.status === "saving" || j.status === "fail")) {
+    e.preventDefault();
+    e.returnValue = "";
+  }
+});
+
+function startSave(kind, label) {
+  const loaded = kindInfo(kind).loaded();
+  if (!loaded) {
+    showStatus("⚠️ 読み込みができていないので保存しなかったよ。ページを再読み込みしてね", true);
+    return Promise.resolve(false);
+  }
+  const job = { id: ++jobSeq, kind, label, status: "wait", pct: 0 };
+  saveJobs.push(job);
+  stashPending(kind);
+  return runSaveJob(job);
+}
+
+function saveEntries(label) {
+  return startSave("entries", label || "記録の変更");
+}
+
+// ---- Name cleanup / 表記ゆれ ----
+// cleanName: light tidy of typed text (full-width letters/digits -> half-width, half-width kana -> full-width,
+//            all kinds of spaces -> one normal space, trimmed)
+function cleanName(s) {
+  s = String(s || "");
+  s = s.replace(/[Ａ-Ｚａ-ｚ０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+  s = s.replace(/[\uFF66-\uFF9F]+/g, m => m.normalize("NFKC"));
+  return s.replace(/[\s\u3000]+/g, " ").trim();
+}
+// matchKey: "same thing?" test — ignores spaces, upper/lower case and ひらがな/カタカナ
+function matchKey(s) {
+  return cleanName(s).replace(/\s/g, "").toLowerCase()
+    .replace(/[\u30A1-\u30F6]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60));
+}
+const canon = { item: {}, group: {}, maker: {} };
+function buildCanon() {
+  const make = (get) => {
+    const cnt = {};
+    entries.forEach(e => {
+      const raw = get(e);
+      if (!raw) return;
+      const n = cleanName(raw), k = matchKey(n);
+      if (!k) return;
+      if (!cnt[k]) cnt[k] = {};
+      if (!cnt[k][n]) cnt[k][n] = { n: 0, ts: 0 };
+      cnt[k][n].n++;
+      cnt[k][n].ts = Math.max(cnt[k][n].ts, e.ts || 0);
+    });
+    const out = {};
+    Object.keys(cnt).forEach(k => {
+      out[k] = Object.entries(cnt[k]).sort((a, b) => b[1].n - a[1].n || b[1].ts - a[1].ts)[0][0];
+    });
+    return out;
+  };
+  canon.item = make(e => e.itemName);
+  canon.group = make(e => e.groupName || e.itemName);
+  canon.maker = make(e => e.maker);
+}
+function canonOf(type, name) {
+  const n = cleanName(name);
+  return canon[type][matchKey(n)] || n;
+}
+function gOf(e) { return canonOf("group", e.groupName || e.itemName); }
+
+// ---- App settings (saved in the sheet too) + count-unit merging ----
+const SETTINGS_KEY = "grocery-settings-v1";
+let appSettings = { mergeCount: {} }; // matchKey(group name) -> true: compare 個/袋/パック/束 together
+let settingsLoaded = false;
+const COUNT_UNITS = ["個", "袋", "パック", "束"];
+
+async function loadSettings() {
+  try {
+    const value = await sheetGet(SETTINGS_KEY);
+    appSettings = value ? JSON.parse(value) : { mergeCount: {} };
+    if (!appSettings.mergeCount) appSettings.mergeCount = {};
+    settingsLoaded = true;
+    recoverPending("settings");
+  } catch (e) {
+    console.error("読み込みエラー:", e);
+    appSettings = { mergeCount: {} };
+    showStatus("⚠️ 設定を読み込めなかったよ。保存は止めてあるので、ページを再読み込みしてね", true);
+  }
+  renderAll();
+}
+function saveSettings(label) { return startSave("settings", label || "設定"); }
+
+// the "comparison unit" of a record: 個/袋/パック/束 collapse into "1つ" when merging is on for that product
+function ukForUnit(groupNm, unit) {
+  if (COUNT_UNITS.includes(unit) && appSettings.mergeCount[matchKey(groupNm)]) return "1つ";
+  return normUnitKey(unit);
+}
+function ukOf(e) { return ukForUnit(gOf(e), e.unit); }
+function labelOf(e) { return ukOf(e) === "1つ" ? "1つあたり" : e.label; }
+
+// Quantity can be a calculation like 350×30 or 1.5*6 (only numbers and + - × * ÷ / ( ) are accepted)
+function parseQty(str) {
+  let t = String(str || "").trim();
+  if (!t) return NaN;
+  t = t.replace(/[０-９．]/g, c => c === "．" ? "." : String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+       .replace(/[×xX＊✕]/g, "*").replace(/[÷／]/g, "/").replace(/＋/g, "+").replace(/[－−ー]/g, "-")
+       .replace(/（/g, "(").replace(/）/g, ")").replace(/[\s,，]/g, "");
+  if (!/^[0-9.+\-*\/()]+$/.test(t)) return NaN;
+  try {
+    const v = Function('"use strict"; return (' + t + ');')();
+    return (typeof v === "number" && isFinite(v)) ? v : NaN;
+  } catch (e) { return NaN; }
 }
 
 function unitLabel(unit) {
@@ -775,8 +1038,32 @@ document.getElementById("catRow").addEventListener("click", (e) => {
 document.getElementById("unitGrid").addEventListener("click", (e) => {
   const btn = e.target.closest(".unitbtn");
   if (!btn || btn.classList.contains("unitmore")) return;
+  unitManual = true;
   setUnit(btn.dataset.unit);
 });
+
+// If this product was recorded in a different (non-comparable) unit before, say so and offer a one-tap switch
+function updateUnitHint() {
+  const hint = document.getElementById("unitHint");
+  if (!hint) return;
+  const itemRaw = cleanName(document.getElementById("itemName").value);
+  const grp = canonOf("group", cleanName(document.getElementById("groupName").value) || itemRaw);
+  hint.style.display = "none";
+  if (!grp) return;
+  const mineKey = ukForUnit(grp, currentUnit);
+  const others = entries.filter(e => gOf(e) === grp && ukOf(e) !== mineKey);
+  if (others.length === 0) return;
+  const units = {};
+  others.forEach(e => { units[e.unit] = (units[e.unit] || 0) + 1; });
+  const last = others.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0))[0].unit;
+  const list = Object.entries(units).map(([u, n]) => `「${u}」${n}件`).join("・");
+  hint.innerHTML = `この商品は前に${escapeHtml(list)}で記録されているよ。比べたいなら単位を合わせてね <span id="unitHintSwitch" data-unit="${escapeHtml(last)}" style="text-decoration:underline; cursor:pointer; white-space:nowrap;">「${escapeHtml(last)}」にする</span>`;
+  hint.style.display = "block";
+  document.getElementById("unitHintSwitch").addEventListener("click", (ev) => {
+    unitManual = true;
+    setUnit(ev.currentTarget.dataset.unit);
+  });
+}
 
 function setUnit(unit) {
   currentUnit = unit;
@@ -788,11 +1075,36 @@ function setUnit(unit) {
   document.getElementById(id).addEventListener("input", updatePreview);
 });
 
+function updateQtyCalc() {
+  const raw = document.getElementById("qty").value.trim();
+  const el = document.getElementById("qtyCalc");
+  if (!raw) { el.style.display = "none"; return; }
+  const v = parseQty(raw);
+  if (isNaN(v)) { el.textContent = "数量が読み取れないよ(数字と × だけ使えるよ)"; el.style.color = "var(--warn)"; el.style.display = "block"; return; }
+  if (/[^0-9.]/.test(raw)) {
+    el.textContent = `= ${Math.round(v * 1000) / 1000}`;
+    el.style.color = "var(--accent)";
+    el.style.display = "block";
+  } else {
+    el.style.display = "none";
+  }
+}
+document.getElementById("qty").addEventListener("input", updateQtyCalc);
+document.getElementById("qtyTimes").addEventListener("click", () => {
+  const q = document.getElementById("qty");
+  q.value = q.value + "×";
+  q.focus();
+  updateQtyCalc();
+  updatePreview();
+});
+
 function updatePreview() {
   const price = parseFloat(document.getElementById("price").value);
-  const qty = parseFloat(document.getElementById("qty").value);
-  const itemName = document.getElementById("itemName").value.trim();
-  const groupName = document.getElementById("groupName").value.trim() || itemName;
+  const qty = parseQty(document.getElementById("qty").value);
+  updateUnitHint();
+  updateQtyCalc();
+  const itemName = cleanName(document.getElementById("itemName").value);
+  const groupName = canonOf("group", cleanName(document.getElementById("groupName").value) || itemName);
   const preview = document.getElementById("preview");
 
   if (!price || !qty) {
@@ -812,8 +1124,8 @@ function updatePreview() {
   hintEl.textContent = "";
 
   if (groupName) {
-    const key = normUnitKey(currentUnit);
-    const history = entries.filter(e => (e.groupName || e.itemName) === groupName && normUnitKey(e.unit) === key);
+    const key = ukForUnit(groupName, currentUnit);
+    const history = entries.filter(e => gOf(e) === groupName && ukOf(e) === key);
     if (history.length > 0) {
       const prices = history.map(e => e.unitPrice);
       const min = Math.min(...prices);
@@ -831,14 +1143,16 @@ function updatePreview() {
 
 // ---- Save ----
 document.getElementById("saveBtn").addEventListener("click", async () => {
-  const itemName = document.getElementById("itemName").value.trim();
-  const groupName = document.getElementById("groupName").value.trim() || itemName;
+  buildCanon();
+  const itemName = canonOf("item", document.getElementById("itemName").value);
+  const groupName = canonOf("group", cleanName(document.getElementById("groupName").value) || itemName);
   const storeName = document.getElementById("storeName").value;
   const storeGroup = (storeInfoMap[storeName] && storeInfoMap[storeName].storeGroup) || storeName;
   const price = parseFloat(document.getElementById("price").value);
-  const qty = parseFloat(document.getElementById("qty").value);
+  const qty = parseQty(document.getElementById("qty").value);
   const memo = document.getElementById("memo").value.trim();
-  const maker = document.getElementById("maker").value.trim();
+  const makerRaw = cleanName(document.getElementById("maker").value);
+  const maker = makerRaw ? canonOf("maker", makerRaw) : "";
   const isDiscount = document.getElementById("discountToggle").checked;
   let originalPrice = null, discountType = null, discountValue = null, discountLabel = null;
   if (isDiscount) {
@@ -858,6 +1172,7 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
   }
   const unitPrice = computeUnitPrice(price, qty, currentUnit);
 
+  const wasEditing = !!editingId;
   if (editingId) {
     const idx = entries.findIndex(en => en.id === editingId);
     if (idx !== -1) {
@@ -886,14 +1201,16 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
     });
   }
 
-  await saveEntries();
+  saveEntries(`${itemName}(${storeName})`); // not awaited: keep recording while it saves
 
+  unitManual = false;
   document.getElementById("maker").value = "";
-  document.getElementById("storeName").value = "";
+  if (wasEditing) document.getElementById("storeName").value = ""; // keep the shop selected while recording new items
   document.getElementById("itemName").value = "";
   document.getElementById("groupName").value = "";
   document.getElementById("price").value = "";
   document.getElementById("qty").value = "";
+  updateQtyCalc();
   document.getElementById("memo").value = "";
   document.getElementById("discountToggle").checked = false;
   document.getElementById("discountFields").style.display = "none";
@@ -905,17 +1222,21 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
   document.getElementById("preview").style.display = "none";
 
   renderAll();
-  switchView("list");
+  // stay on this screen (new record or edit) so the next item can be typed right away
+  showStatus(wasEditing ? "更新したよ ✓" : "記録したよ ✓ 続けて入力できるよ", false);
+  window.scrollTo(0, 0);
 });
 
 document.getElementById("cancelEditBtn").addEventListener("click", () => {
   resetEditState();
+  unitManual = false;
   document.getElementById("maker").value = "";
   document.getElementById("storeName").value = "";
   document.getElementById("itemName").value = "";
   document.getElementById("groupName").value = "";
   document.getElementById("price").value = "";
   document.getElementById("qty").value = "";
+  updateQtyCalc();
   document.getElementById("memo").value = "";
   document.getElementById("discountToggle").checked = false;
   document.getElementById("discountFields").style.display = "none";
@@ -1016,6 +1337,7 @@ function switchView(view) {
   document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
   document.getElementById("view-" + view).classList.add("active");
   document.getElementById("settingsMenu").classList.remove("open");
+  if (view === "tidy") renderTidy();
 }
 
 // ---- Settings menu ----
@@ -1035,6 +1357,19 @@ document.addEventListener("click", (e) => {
 
 // ---- List view ----
 document.getElementById("searchBox").addEventListener("input", renderList);
+document.getElementById("makerFilter").addEventListener("change", renderList);
+
+// maker filter: lists every maker recorded (within the chosen category); hidden until at least one maker exists
+function populateMakerFilter() {
+  const sel = document.getElementById("makerFilter");
+  const current = sel.value;
+  const makers = [...new Set(entries
+    .filter(e => e.maker && (currentFilterCat === "全て" || e.category === currentFilterCat))
+    .map(e => canonOf("maker", e.maker)))].sort((a, b) => a.localeCompare(b, "ja"));
+  sel.innerHTML = `<option value="">すべてのメーカー</option>` + makers.map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join("");
+  sel.value = makers.includes(current) ? current : "";
+  sel.style.display = makers.length > 0 ? "block" : "none";
+}
 
 document.getElementById("filterCatRow").addEventListener("click", (e) => {
   const btn = e.target.closest(".catbtn");
@@ -1046,6 +1381,8 @@ document.getElementById("filterCatRow").addEventListener("click", (e) => {
 });
 
 function renderList() {
+  populateMakerFilter();
+  const makerSel = document.getElementById("makerFilter").value;
   const q = document.getElementById("searchBox").value.trim().toLowerCase();
   const container = document.getElementById("listContent");
 
@@ -1056,11 +1393,12 @@ function renderList() {
 
   const groups = {};
   entries.forEach(e => {
-    if (q && !e.itemName.toLowerCase().includes(q) && !(e.groupName || "").toLowerCase().includes(q)) return;
+    if (q && !matchKey(e.itemName).includes(matchKey(q)) && !matchKey(e.groupName || "").includes(matchKey(q)) && !matchKey(e.maker || "").includes(matchKey(q))) return;
     if (currentFilterCat !== "全て" && e.category !== currentFilterCat) return;
-    const gName = e.groupName || e.itemName;
-    const key = gName + "|" + e.unitKey;
-    if (!groups[key]) groups[key] = { groupName: gName, label: e.label, list: [] };
+    if (makerSel && matchKey(e.maker || "") !== matchKey(makerSel)) return;
+    const gName = gOf(e);
+    const key = gName + "|" + ukOf(e);
+    if (!groups[key]) groups[key] = { groupName: gName, label: labelOf(e), list: [] };
     groups[key].list.push(e);
   });
 
@@ -1079,7 +1417,7 @@ function renderList() {
     const visibleList = isExpanded ? g.list : g.list.slice(0, 1);
     const rows = visibleList.map(e => {
       const isBest = e.unitPrice === min;
-      const showVariant = e.itemName !== g.groupName;
+      const showVariant = matchKey(e.itemName) !== matchKey(g.groupName);
       return `<div class="entry-row ${isBest ? 'best' : ''}" data-id="${e.id}" style="cursor:pointer;">
         <div class="entry-left">
           <span class="entry-store"><span class="crown">${isBest ? '👑' : ''}</span>${escapeHtml(e.storeName)}</span>
@@ -1104,18 +1442,31 @@ function renderList() {
       : "";
     return `<div class="item-group">
       <h3>${escapeHtml(g.groupName)} <span style="font-size:11px;color:var(--sub);font-weight:400;">(${g.label})</span></h3>
+      ${mergeLine(g.groupName)}
       ${rows}
       ${moreBtn}
     </div>`;
   }).join("");
 
+  container.querySelectorAll("[data-merge-toggle]").forEach(el => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const mk = matchKey(el.dataset.mergeToggle);
+      if (appSettings.mergeCount[mk]) delete appSettings.mergeCount[mk];
+      else appSettings.mergeCount[mk] = true;
+      saveSettings(`まとめて比べる設定: ${el.dataset.mergeToggle}`);
+      renderAll();
+    });
+  });
+
   container.querySelectorAll(".delete-x").forEach(el => {
     el.addEventListener("click", (e) => {
       e.stopPropagation();
       showConfirm("この記録を削除する?", async () => {
+        const target = entries.find(en => en.id === el.dataset.id);
         entries = entries.filter(en => en.id !== el.dataset.id);
-        await saveEntries();
         renderAll();
+        saveEntries(`削除: ${target ? target.itemName : "記録"}`);
       });
     });
   });
@@ -1182,10 +1533,10 @@ function renderStoreView() {
 
   const groups = {};
   filtered.forEach(e => {
-    const gName = e.groupName || e.itemName;
+    const gName = gOf(e);
     const sName = currentStoreGroup(e);
-    const key = gName + "|" + e.unitKey;
-    if (!groups[key]) groups[key] = { groupName: gName, label: e.label, byStore: {} };
+    const key = gName + "|" + ukOf(e);
+    if (!groups[key]) groups[key] = { groupName: gName, label: labelOf(e), byStore: {} };
     const cur = groups[key].byStore[sName];
     if (!cur || e.unitPrice < cur.unitPrice) groups[key].byStore[sName] = e;
   });
@@ -1199,7 +1550,7 @@ function renderStoreView() {
 
   const rankGroups = {}; // itemKey -> { store -> [unitPrice, ...] }
   rankingSource.forEach(e => {
-    const key = (e.groupName || e.itemName) + "|" + e.unitKey;
+    const key = gOf(e) + "|" + ukOf(e);
     const sName = currentStoreGroup(e);
     if (!rankGroups[key]) rankGroups[key] = {};
     if (!rankGroups[key][sName]) rankGroups[key][sName] = [];
@@ -1283,8 +1634,8 @@ function renderStoreView() {
   container.innerHTML = "";
   const groupAllPrices = {};
   filtered.forEach(e => {
-    const gName = e.groupName || e.itemName;
-    const key = gName + "|" + e.unitKey;
+    const gName = gOf(e);
+    const key = gName + "|" + ukOf(e);
     if (!groupAllPrices[key]) groupAllPrices[key] = [];
     groupAllPrices[key].push(e.unitPrice);
   });
@@ -1353,6 +1704,21 @@ function renderStoreView() {
   });
 }
 
+// "個・袋・パック・束をまとめて比べる" switch shown on 商品別 cards
+function mergeLine(groupNm) {
+  const mk = matchKey(groupNm);
+  const on = !!appSettings.mergeCount[mk];
+  const units = [...new Set(entries.filter(e => gOf(e) === groupNm && COUNT_UNITS.includes(e.unit)).map(e => e.unit))];
+  const btn = "color:var(--accent); font-weight:700; cursor:pointer; text-decoration:underline; white-space:nowrap;";
+  if (on) {
+    return `<div class="hint" style="margin:2px 0 8px; display:flex; justify-content:space-between; gap:8px;"><span>🔀 個・袋・パック・束をまとめて比べ中</span><span data-merge-toggle="${escapeHtml(groupNm)}" style="${btn}">やめる</span></div>`;
+  }
+  if (units.length >= 2) {
+    return `<div class="hint" style="margin:2px 0 8px; display:flex; justify-content:space-between; gap:8px;"><span>🔀 ${units.map(u => `「${u}」`).join("")}の記録もあるよ</span><span data-merge-toggle="${escapeHtml(groupNm)}" style="${btn}">まとめて比べる</span></div>`;
+  }
+  return "";
+}
+
 function escapeHtml(s) {
   return s.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
@@ -1366,10 +1732,10 @@ function setupAutocomplete(inputId, dropdownId, getOptions) {
   const dropdown = document.getElementById(dropdownId);
 
   function show() {
-    const q = input.value.trim().toLowerCase();
+    const q = matchKey(input.value);
     const options = getOptions();
     const filtered = q
-      ? options.filter(o => o.toLowerCase().includes(q) && o.toLowerCase() !== q)
+      ? options.filter(o => matchKey(o).includes(q) && matchKey(o) !== q)
       : options;
     if (filtered.length === 0) { dropdown.style.display = "none"; return; }
     dropdown.innerHTML = filtered.slice(0, 8).map(o => `<div class="suggest-item" data-val="${escapeHtml(o)}">${escapeHtml(o)}</div>`).join("");
@@ -1392,16 +1758,23 @@ function setupAutocomplete(inputId, dropdownId, getOptions) {
 // Auto-fill グループ名 from past records when the typed 商品名 exactly matches a recorded one.
 // Only overwrites the field if it's empty or was filled automatically (never a hand-typed value).
 let groupAutoFilled = false;
+let unitManual = false; // true once the user taps a unit by hand (then we stop auto-picking it)
 document.getElementById("groupName").addEventListener("keydown", () => { groupAutoFilled = false; });
 document.getElementById("groupName").addEventListener("paste", () => { groupAutoFilled = false; });
 document.getElementById("itemName").addEventListener("input", () => {
+  // auto-pick the unit this product was recorded with last time
+  if (!unitManual && !editingId) {
+    const k = matchKey(document.getElementById("itemName").value);
+    const last = k ? entries.filter(e => matchKey(e.itemName) === k).sort((a, b) => (b.ts || 0) - (a.ts || 0))[0] : null;
+    if (last && last.unit !== currentUnit) setUnit(last.unit);
+  }
   const gEl = document.getElementById("groupName");
-  const name = document.getElementById("itemName").value.trim();
+  const name = matchKey(document.getElementById("itemName").value);
   if (gEl.value.trim() && !groupAutoFilled) return;
-  const past = entries.filter(e => e.itemName === name && e.groupName && e.groupName !== e.itemName)
-    .sort((a, b) => (b.ts || 0) - (a.ts || 0))[0];
+  const past = name ? entries.filter(e => matchKey(e.itemName) === name && e.groupName && matchKey(e.groupName) !== matchKey(e.itemName))
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0))[0] : null;
   if (past) {
-    gEl.value = past.groupName;
+    gEl.value = gOf(past);
     groupAutoFilled = true;
   } else if (groupAutoFilled) {
     gEl.value = "";
@@ -1410,9 +1783,125 @@ document.getElementById("itemName").addEventListener("input", () => {
   updatePreview();
 });
 
-setupAutocomplete("maker", "makerSuggest", () => [...new Set(entries.map(e => e.maker).filter(Boolean))]);
-setupAutocomplete("itemName", "itemNameSuggest", () => [...new Set(entries.map(e => e.itemName))]);
-setupAutocomplete("groupName", "groupNameSuggest", () => [...new Set(entries.map(e => e.groupName || e.itemName))]);
+// Show a hint when what's typed is the same thing as an already-recorded name written differently
+function refreshNameHints() {
+  [["itemName", "item"], ["groupName", "group"], ["maker", "maker"]].forEach(([id, type]) => {
+    const hint = document.getElementById(id + "Hint");
+    if (!hint) return;
+    const typed = cleanName(document.getElementById(id).value);
+    const existing = typed ? canon[type][matchKey(typed)] : null;
+    if (existing && existing !== typed) {
+      hint.textContent = `「${existing}」と同じものとして記録するよ`;
+      hint.style.display = "block";
+    } else {
+      hint.style.display = "none";
+    }
+  });
+}
+["itemName", "groupName", "maker"].forEach(id => {
+  document.getElementById(id).addEventListener("input", refreshNameHints);
+});
+
+setupAutocomplete("maker", "makerSuggest", () => [...new Set(entries.map(e => canonOf("maker", e.maker)).filter(Boolean))]);
+setupAutocomplete("itemName", "itemNameSuggest", () => [...new Set(entries.map(e => canonOf("item", e.itemName)))]);
+setupAutocomplete("groupName", "groupNameSuggest", () => [...new Set(entries.map(gOf))]);
+
+// ---- 表記ゆれをまとめる screen ----
+const TIDY_TYPES = [
+  { type: "item", title: "商品名", get: e => e.itemName, set: (e, v) => { e.itemName = v; } },
+  { type: "group", title: "グループ名", get: e => e.groupName, set: (e, v) => { e.groupName = v; } },
+  { type: "maker", title: "メーカー名", get: e => e.maker, set: (e, v) => { e.maker = v; } },
+];
+const tidyChoice = {}; // "type|key" -> chosen writing
+
+function tidyClusters(t) {
+  const m = {};
+  entries.forEach(e => {
+    const raw = t.get(e);
+    if (!raw) return;
+    const k = matchKey(raw);
+    if (!k) return;
+    if (!m[k]) m[k] = {};
+    m[k][raw] = (m[k][raw] || 0) + 1;
+  });
+  return Object.entries(m)
+    .map(([k, variants]) => ({ k, variants }))
+    .filter(c => {
+      const names = Object.keys(c.variants);
+      return names.length > 1 || cleanName(names[0]) !== names[0];
+    });
+}
+
+function tidyTarget(t, c) {
+  return tidyChoice[t.type + "|" + c.k] || canon[t.type][c.k] || cleanName(Object.keys(c.variants)[0]);
+}
+
+function applyTidy(t, c, target) {
+  target = cleanName(target);
+  entries.forEach(e => {
+    const raw = t.get(e);
+    if (raw && matchKey(raw) === c.k) t.set(e, target);
+  });
+}
+
+function renderTidy() {
+  buildCanon();
+  const box = document.getElementById("tidyContent");
+  let html = "";
+  let total = 0;
+  TIDY_TYPES.forEach(t => {
+    const clusters = tidyClusters(t);
+    total += clusters.length;
+    if (clusters.length === 0) return;
+    html += `<div class="card"><label style="display:block; font-size:12.5px; color:var(--sub); margin-bottom:8px; font-weight:600;">${t.title}</label>`;
+    clusters.forEach(c => {
+      const target = tidyTarget(t, c);
+      const names = [...new Set([...Object.keys(c.variants).map(cleanName), target])];
+      html += `<div style="margin-bottom:14px;">
+        <div class="catrow" style="flex-wrap:wrap;">
+          ${names.map(n => {
+            const cnt = Object.entries(c.variants).filter(([raw]) => cleanName(raw) === n).reduce((a, [, v]) => a + v, 0);
+            return `<div class="catbtn ${n === target ? 'active' : ''}" data-tidy-pick="${escapeHtml(t.type + '|' + c.k)}" data-name="${escapeHtml(n)}" style="flex:0 0 auto; padding:8px 12px;">${escapeHtml(n)}${cnt ? ` (${cnt}件)` : ''}</div>`;
+          }).join("")}
+        </div>
+        <button class="bigbtn" data-tidy-apply="${escapeHtml(t.type + '|' + c.k)}" style="padding:9px;">「${escapeHtml(target)}」にそろえる</button>
+      </div>`;
+    });
+    html += `</div>`;
+  });
+  box.innerHTML = total === 0 ? `<div class="card"><div class="hint">表記ゆれは見つからなかったよ 🎉</div></div>` : html;
+
+  box.querySelectorAll("[data-tidy-pick]").forEach(el => {
+    el.addEventListener("click", () => {
+      tidyChoice[el.dataset.tidyPick] = el.dataset.name;
+      renderTidy();
+    });
+  });
+  box.querySelectorAll("[data-tidy-apply]").forEach(el => {
+    el.addEventListener("click", () => {
+      const [type, k] = el.dataset.tidyApply.split("|");
+      const t = TIDY_TYPES.find(x => x.type === type);
+      const c = tidyClusters(t).find(x => x.k === k);
+      if (!c) return;
+      applyTidy(t, c, tidyTarget(t, c));
+      saveEntries("表記ゆれをまとめた");
+      renderAll();
+      renderTidy();
+    });
+  });
+}
+
+document.getElementById("tidyAllBtn").addEventListener("click", () => {
+  buildCanon();
+  let n = 0;
+  TIDY_TYPES.forEach(t => {
+    tidyClusters(t).forEach(c => { applyTidy(t, c, tidyTarget(t, c)); n++; });
+  });
+  if (n === 0) { showStatus("そろえるものはなかったよ", false); return; }
+  saveEntries("表記ゆれをまとめた");
+  renderAll();
+  renderTidy();
+});
 
 function populateStoreSelect() {
   const sel = document.getElementById("storeName");
@@ -1487,6 +1976,8 @@ function collapseUnits() {
 }
 
 function renderAll() {
+  buildCanon();
+  refreshNameHints();
   collapseUnits();
   renderList();
   renderStoreView();
@@ -1555,6 +2046,7 @@ async function loadStoreInfo() {
     const value = await sheetGet(STOREINFO_KEY);
     storeInfoMap = value ? JSON.parse(value) : {};
     storeInfoLoaded = true;
+    recoverPending("store");
   } catch (e) {
     console.error("読み込みエラー:", e);
     storeInfoMap = {};
@@ -1565,21 +2057,8 @@ async function loadStoreInfo() {
   updateStoreGroupDatalist();
 }
 
-async function saveStoreInfo() {
-  if (!storeInfoLoaded) {
-    showStatus("⚠️ 読み込みができていないので保存しなかったよ。ページを再読み込みしてね", true);
-    return false;
-  }
-  const snapshot = JSON.stringify(storeInfoMap);
-  try {
-    await queueSave(() => sheetSet(STOREINFO_KEY, snapshot));
-    showStatus("保存したよ ✓", false);
-    return true;
-  } catch (e) {
-    console.error("Storage error:", e);
-    showStatus("⚠️ 保存できなかったかも。ページを再読み込みして確認してね", true);
-    return false;
-  }
+function saveStoreInfo(label) {
+  return startSave("store", label || "店舗情報");
 }
 
 document.getElementById("siParkingRow").addEventListener("click", (e) => {
@@ -1737,6 +2216,7 @@ function copyStoreInfo(name) {
 
 loadEntries();
 loadStoreInfo();
+loadSettings();
 </script>
 
 </body>
