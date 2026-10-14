@@ -598,6 +598,15 @@
       <button class="bigbtn" id="siSaveBtn">この店舗情報を保存</button>
       <button id="siCancelBtn" style="display:none; width:100%; margin-top:8px; padding:12px; border-radius:12px; border:1px solid var(--line); background:transparent; color:var(--sub); font-weight:600; font-size:14px;">編集をキャンセル</button>
     </div>
+    <div style="display:flex; align-items:center; gap:8px; margin:4px 2px 10px;">
+      <span style="font-size:12.5px; color:var(--sub); white-space:nowrap;">並び順</span>
+      <select id="storeSortSel" style="flex:1; padding:9px 8px; border-radius:10px; border:1px solid var(--line); background:#FCFAF7; font-size:14px; color:var(--ink); font-family:inherit;">
+        <option value="name">名前順</option>
+        <option value="freq">よく行く順(記録が多い)</option>
+        <option value="recent">最近行った順</option>
+        <option value="registered">登録した順</option>
+      </select>
+    </div>
     <div id="storeInfoList"></div>
   </div>
 
@@ -2267,6 +2276,29 @@ document.getElementById("tidyAllBtn").addEventListener("click", () => {
   });
 })();
 
+// ---- sort order shared by 店舗情報 and the お店 pickers on 記録する ----
+let storeSortMode = lsGet("grocery-storesort-v1", "name");
+function storeStatsFor(names) {
+  const set = new Set(names);
+  let count = 0, last = 0;
+  entries.forEach(e => { if (set.has(e.storeName)) { count++; last = Math.max(last, e.ts || 0); } });
+  const keys = Object.keys(storeInfoMap);
+  const idx = Math.min(...names.map(n => keys.indexOf(n)).filter(i => i >= 0), 1e9);
+  return { count, last, idx };
+}
+// items: [{label, names:[storeNames]}]  ->  sorted copy
+function sortStoreItems(items) {
+  const withStats = items.map(it => ({ it, st: storeStatsFor(it.names) }));
+  withStats.sort((a, b) => {
+    let d = 0;
+    if (storeSortMode === "freq") d = b.st.count - a.st.count;
+    else if (storeSortMode === "recent") d = b.st.last - a.st.last;
+    else if (storeSortMode === "registered") d = a.st.idx - b.st.idx;
+    return d || a.it.label.localeCompare(b.it.label, 'ja');
+  });
+  return withStats.map(x => x.it);
+}
+
 function groupOfStore(name) {
   const info = storeInfoMap[name];
   return (info && info.storeGroup && info.storeGroup.trim()) || name;
@@ -2276,21 +2308,23 @@ function parentOfStore(name) {
   return (info && info.parentGroup && info.parentGroup.trim()) || "";
 }
 function storesOfGroup(g) {
-  return Object.keys(storeInfoMap).filter(n => groupOfStore(n) === g).sort((a, b) => a.localeCompare(b, 'ja'));
+  return sortStoreItems(Object.keys(storeInfoMap).filter(n => groupOfStore(n) === g).map(n => ({ label: n, names: [n] }))).map(x => x.label);
 }
 
 function buildGroupPick(selected) {
   const gp = document.getElementById("storeGroupPick");
-  const groups = [...new Set(Object.keys(storeInfoMap).map(groupOfStore))].sort((a, b) => a.localeCompare(b, 'ja'));
+  const groupNames = [...new Set(Object.keys(storeInfoMap).map(groupOfStore))];
+  const groups = sortStoreItems(groupNames.map(g => ({ label: g, names: storesOfGroup(g) }))).map(x => x.label);
   const byParent = {};
   groups.forEach(g => {
     const p = parentOfStore(storesOfGroup(g)[0]) || "";
     (byParent[p] = byParent[p] || []).push(g);
   });
+  const parentOrder = sortStoreItems(Object.keys(byParent).filter(Boolean).map(p => ({ label: p, names: byParent[p].flatMap(storesOfGroup) }))).map(x => x.label);
   const opt = g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`;
   gp.innerHTML = `<option value="">お店グループを選択</option>`
     + (byParent[""] || []).map(opt).join("")
-    + Object.keys(byParent).filter(Boolean).sort((a, b) => a.localeCompare(b, 'ja'))
+    + parentOrder
         .map(p => `<optgroup label="${escapeHtml(p)}">${byParent[p].map(opt).join("")}</optgroup>`).join("");
   gp.value = groups.includes(selected) ? selected : "";
 }
@@ -2604,14 +2638,15 @@ function renderStoreInfoList() {
     if (!groups[gName]) groups[gName] = [];
     groups[gName].push(name);
   });
-  const groupKeys = Object.keys(groups).sort((a,b) => a.localeCompare(b, 'ja'));
+  const groupKeys = sortStoreItems(Object.keys(groups).map(g => ({ label: g, names: groups[g] }))).map(x => x.label);
   // parent (系列) of each group = the parent set on any of its stores
   const parentOfGroup = {};
   groupKeys.forEach(g => {
     const withParent = groups[g].map(n => (storeInfoMap[n].parentGroup || "").trim()).find(Boolean);
     parentOfGroup[g] = withParent || "";
   });
-  const parentNames = [...new Set(Object.values(parentOfGroup).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ja'));
+  const parentNames = sortStoreItems([...new Set(Object.values(parentOfGroup).filter(Boolean))]
+    .map(pn => ({ label: pn, names: groupKeys.filter(g => parentOfGroup[g] === pn).flatMap(g => groups[g]) }))).map(x => x.label);
   const orderedGroups = [];
   parentNames.forEach(pn => {
     orderedGroups.push({ parent: pn, header: true });
@@ -2626,7 +2661,7 @@ function renderStoreInfoList() {
       return `<div style="font-weight:700; font-size:14px; margin:16px 2px 6px; color:var(--ink);">🏢 ${escapeHtml(item.parent)}</div>`;
     }
     const gName = item.g;
-    const storeNames = groups[gName].sort((a,b) => a.localeCompare(b, 'ja'));
+    const storeNames = sortStoreItems(groups[gName].map(n => ({ label: n, names: [n] }))).map(x => x.label);
     const rows = storeNames.map(name => {
       const info = storeInfoMap[name];
       const lines = [];
@@ -2697,6 +2732,13 @@ function copyStoreInfo(name) {
   document.getElementById("siStoreName").focus();
 }
 
+document.getElementById("storeSortSel").value = storeSortMode;
+document.getElementById("storeSortSel").addEventListener("change", () => {
+  storeSortMode = document.getElementById("storeSortSel").value;
+  lsSet("grocery-storesort-v1", storeSortMode);
+  renderStoreInfoList();
+  syncStorePickers();
+});
 resetBuyDate();
 initListControls();
 syncDomainButtons();
