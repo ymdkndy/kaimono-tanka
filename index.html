@@ -618,7 +618,7 @@
   <div class="tab" data-view="store"><span class="icon">🏪</span>お店比較</div>
 </div>
 
-<div id="confirmOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:100; align-items:center; justify-content:center;">
+<div id="confirmOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:200; align-items:center; justify-content:center;">
   <div style="background:var(--card); border-radius:16px; padding:20px; max-width:280px; margin:0 16px; text-align:center;">
     <div id="confirmMessage" style="font-size:14px; margin-bottom:16px; color:var(--ink);"></div>
     <div style="display:flex; gap:8px;">
@@ -1568,23 +1568,107 @@ function renderListChips() {
   if (currentList && !appSettings.lists[currentList]) currentList = "";
   if (names.length === 0) { box.style.display = "none"; box.innerHTML = ""; return; }
   box.style.display = "flex";
-  box.innerHTML = [`<div class="catbtn ${currentList ? '' : 'active'}" data-list="" style="flex:0 0 auto; padding:8px 12px;">すべて</div>`]
-    .concat(names.map(n => `<div class="catbtn ${n === currentList ? 'active' : ''}" data-list="${escapeHtml(n)}" style="flex:0 0 auto; padding:8px 12px;">☆ ${escapeHtml(n)}</div>`))
-    .concat(currentList ? [`<div data-list-del="1" style="flex:0 0 auto; padding:8px 6px; font-size:12px; color:var(--sub); text-decoration:underline; cursor:pointer;">このリストを削除</div>`] : [])
-    .join("");
-  box.querySelectorAll("[data-list]").forEach(el => {
-    el.addEventListener("click", () => { currentList = el.dataset.list; renderList(); });
-  });
-  const del = box.querySelector("[data-list-del]");
-  if (del) del.addEventListener("click", () => {
-    showConfirm(`リスト「${currentList}」を削除する?(商品の記録は消えないよ)`, () => {
-      const name = currentList;
-      delete appSettings.lists[name];
-      currentList = "";
-      saveSettings(`リスト削除: ${name}`);
-      renderList();
+  box.style.alignItems = "center";
+  const manage = `<div data-list-manage="1" style="flex:0 0 auto; padding:8px 6px; font-size:12.5px; color:var(--accent); text-decoration:underline; cursor:pointer;">リスト管理</div>`;
+  if (names.length > 4) {
+    // many lists: one dropdown instead of a long row of chips
+    box.innerHTML = `<select id="listSelect" style="flex:1 1 160px; min-width:0;">
+        <option value="">すべて(リストなし)</option>
+        ${names.map(n => `<option value="${escapeHtml(n)}" ${n === currentList ? 'selected' : ''}>☆ ${escapeHtml(n)}(${appSettings.lists[n].length})</option>`).join("")}
+      </select>` + manage;
+    document.getElementById("listSelect").addEventListener("change", (ev) => { currentList = ev.target.value; renderList(); });
+  } else {
+    box.innerHTML = [`<div class="catbtn ${currentList ? '' : 'active'}" data-list="" style="flex:0 0 auto; padding:8px 12px;">すべて</div>`]
+      .concat(names.map(n => `<div class="catbtn ${n === currentList ? 'active' : ''}" data-list="${escapeHtml(n)}" style="flex:0 0 auto; padding:8px 12px;">☆ ${escapeHtml(n)}</div>`))
+      .concat([manage])
+      .join("");
+    box.querySelectorAll("[data-list]").forEach(el => {
+      el.addEventListener("click", () => { currentList = el.dataset.list; renderList(); });
     });
-  });
+  }
+  box.querySelector("[data-list-manage]").addEventListener("click", openListManager);
+}
+
+// Manage lists: reorder, rename, delete
+function openListManager() {
+  let ov = document.getElementById("listManagerOverlay");
+  if (!ov) {
+    ov = document.createElement("div");
+    ov.id = "listManagerOverlay";
+    ov.style.cssText = "position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:100; display:flex; align-items:center; justify-content:center; padding:20px;";
+    document.body.appendChild(ov);
+  }
+  ov.style.display = "flex";
+  let renaming = "";
+  const rebuild = (order, renameFrom, renameTo) => {
+    const next = {};
+    order.forEach(n => { next[n === renameFrom ? renameTo : n] = appSettings.lists[n]; });
+    appSettings.lists = next;
+  };
+  const draw = () => {
+    const names = Object.keys(appSettings.lists);
+    const btn = "border:1px solid var(--line); background:#fff; border-radius:8px; padding:6px 9px; font-size:13px; color:#333; cursor:pointer;";
+    ov.innerHTML = `<div style="background:#fff; border-radius:16px; padding:18px; width:100%; max-width:360px; max-height:80vh; overflow:auto; color:#333;">
+      <div style="font-weight:700; margin-bottom:10px;">リスト管理</div>
+      ${names.length ? names.map((n, i) => renaming === n ? `
+        <div style="display:flex; gap:6px; padding:8px 0; border-top:1px solid var(--line);">
+          <input type="text" id="renameInput" lang="ja" value="${escapeHtml(n)}" style="flex:1; min-width:0;">
+          <button data-rename-ok="${escapeHtml(n)}" style="${btn}">保存</button>
+          <button data-rename-cancel="1" style="${btn}">戻る</button>
+        </div>` : `
+        <div style="display:flex; align-items:center; gap:6px; padding:8px 0; border-top:1px solid var(--line);">
+          <div style="flex:1; min-width:0; font-size:15px; word-break:break-all;">☆ ${escapeHtml(n)}<span style="font-size:11px; color:var(--sub);"> ${appSettings.lists[n].length}品</span></div>
+          <button data-up="${escapeHtml(n)}" style="${btn}" ${i === 0 ? 'disabled' : ''}>↑</button>
+          <button data-down="${escapeHtml(n)}" style="${btn}" ${i === names.length - 1 ? 'disabled' : ''}>↓</button>
+          <button data-rename="${escapeHtml(n)}" style="${btn}">名前</button>
+          <button data-del="${escapeHtml(n)}" style="${btn} color:#c0392b;">削除</button>
+        </div>`).join("") : `<div class="hint">リストはまだないよ</div>`}
+      <button class="bigbtn" id="listManagerClose" style="margin-top:14px; background:#eee; color:#333;">閉じる</button>
+    </div>`;
+    const move = (n, d) => {
+      const order = Object.keys(appSettings.lists);
+      const i = order.indexOf(n), j = i + d;
+      if (j < 0 || j >= order.length) return;
+      [order[i], order[j]] = [order[j], order[i]];
+      rebuild(order);
+      saveSettings("リストの並び替え");
+      renderList(); draw();
+    };
+    ov.querySelectorAll("[data-up]").forEach(b => b.addEventListener("click", () => move(b.dataset.up, -1)));
+    ov.querySelectorAll("[data-down]").forEach(b => b.addEventListener("click", () => move(b.dataset.down, 1)));
+    ov.querySelectorAll("[data-rename]").forEach(b => b.addEventListener("click", () => { renaming = b.dataset.rename; draw(); const inp = document.getElementById("renameInput"); if (inp) inp.focus(); }));
+    const cancel = ov.querySelector("[data-rename-cancel]");
+    if (cancel) cancel.addEventListener("click", () => { renaming = ""; draw(); });
+    const ok = ov.querySelector("[data-rename-ok]");
+    if (ok) {
+      const doRename = () => {
+        const from = ok.dataset.renameOk;
+        const to = cleanName(document.getElementById("renameInput").value);
+        if (!to) return;
+        if (to !== from && appSettings.lists[to]) { showConfirm(`「${to}」というリストはもうあるよ。別の名前にしてね`, () => {}); return; }
+        if (to !== from) {
+          rebuild(Object.keys(appSettings.lists), from, to);
+          if (currentList === from) currentList = to;
+          saveSettings(`リスト名変更: ${from} → ${to}`);
+        }
+        renaming = "";
+        renderList(); draw();
+      };
+      ok.addEventListener("click", doRename);
+      document.getElementById("renameInput").addEventListener("keydown", (e) => { if (e.key === "Enter") doRename(); });
+    }
+    ov.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => {
+      const name = b.dataset.del;
+      showConfirm(`リスト「${name}」を削除する?(商品の記録は消えないよ)`, () => {
+        delete appSettings.lists[name];
+        if (currentList === name) currentList = "";
+        saveSettings(`リスト削除: ${name}`);
+        renderList(); draw();
+      });
+    }));
+    document.getElementById("listManagerClose").addEventListener("click", () => { ov.style.display = "none"; });
+  };
+  draw();
 }
 
 function openListPicker(groupNm) {
@@ -1736,7 +1820,7 @@ function renderList() {
       const showVariant = matchKey(e.itemName) !== matchKey(g.groupName);
       return `<div class="entry-row ${isBest ? 'best' : ''}" data-id="${e.id}" style="cursor:pointer;">
         <div class="entry-left">
-          <span class="entry-store"><span class="crown">${isBest ? '👑' : ''}</span>${escapeHtml(e.storeName)}</span>
+          <span class="entry-store"><span class="crown">${isBest ? '👑' : ''}</span>${escapeHtml(currentStoreGroup(e))}</span>
           <span class="entry-date">${e.date}</span>
           ${(showVariant || e.maker) ? `<div style="font-size:11px;color:var(--sub);margin-top:2px;">${[showVariant ? escapeHtml(e.itemName) : '', e.maker ? `🏭 ${escapeHtml(e.maker)}` : ''].filter(Boolean).join(' ・ ')}</div>` : ''}
           ${e.memo ? `<div style="font-size:11px;color:var(--sub);margin-top:2px;">${escapeHtml(e.memo)}</div>` : ''}
