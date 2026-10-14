@@ -1302,7 +1302,8 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
   saveEntries(`${itemName}(${storeName})`); // not awaited: keep recording while it saves
 
   unitManual = false;
-  resetBuyDate();
+  makerAutoFilled = false;
+  if (wasEditing) resetBuyDate(); // keep the purchase date while recording new items in a row
   document.getElementById("maker").value = "";
   if (wasEditing) document.getElementById("storeName").value = ""; // keep the shop selected while recording new items
   document.getElementById("itemName").value = "";
@@ -1329,6 +1330,7 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
 document.getElementById("cancelEditBtn").addEventListener("click", () => {
   resetEditState();
   unitManual = false;
+  makerAutoFilled = false;
   resetBuyDate();
   document.getElementById("maker").value = "";
   document.getElementById("storeName").value = "";
@@ -2055,10 +2057,24 @@ function setupAutocomplete(inputId, dropdownId, getOptions) {
 // Auto-fill グループ名 from past records when the typed 商品名 exactly matches a recorded one.
 // Only overwrites the field if it's empty or was filled automatically (never a hand-typed value).
 let groupAutoFilled = false;
+let makerAutoFilled = false;
+document.getElementById("maker").addEventListener("keydown", () => { makerAutoFilled = false; });
+document.getElementById("maker").addEventListener("paste", () => { makerAutoFilled = false; });
 let unitManual = false; // true once the user taps a unit by hand (then we stop auto-picking it)
 document.getElementById("groupName").addEventListener("keydown", () => { groupAutoFilled = false; });
 document.getElementById("groupName").addEventListener("paste", () => { groupAutoFilled = false; });
 document.getElementById("itemName").addEventListener("input", () => {
+  // auto-fill the maker used last time for this product (never over a hand-typed one)
+  if (!editingId) {
+    const mEl = document.getElementById("maker");
+    if (!mEl.value.trim() || makerAutoFilled) {
+      const k = matchKey(document.getElementById("itemName").value);
+      const lastM = k ? entries.filter(e => e.maker && matchKey(e.itemName) === k).sort((a, b) => (b.ts || 0) - (a.ts || 0))[0] : null;
+      if (lastM) { mEl.value = canonOf("maker", lastM.maker); makerAutoFilled = true; }
+      else if (makerAutoFilled) { mEl.value = ""; makerAutoFilled = false; }
+      refreshNameHints();
+    }
+  }
   // auto-pick the unit this product was recorded with last time
   if (!unitManual && !editingId) {
     const k = matchKey(document.getElementById("itemName").value);
