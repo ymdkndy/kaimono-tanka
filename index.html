@@ -124,6 +124,13 @@
   }
   .catbtn.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
   .catbtn.cat-hidden:not(.active) { display: none; }
+  .catbtn.dom-hidden { display: none !important; }
+  #domainSwitch { display: flex; gap: 8px; padding: 0 18px 10px; background: var(--bg); }
+  .dombtn {
+    flex: 1; padding: 9px 4px; border-radius: 12px; border: 1.5px solid var(--line);
+    background: #FCFAF7; text-align: center; font-size: 14px; font-weight: 700; color: var(--sub); cursor: pointer;
+  }
+  .dombtn.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
   .catmore {
     flex: 1;
     padding: 10px 4px;
@@ -284,6 +291,11 @@
   </div>
 </header>
 
+<div id="domainSwitch">
+  <div class="dombtn active" data-domain="food">🍚 食品</div>
+  <div class="dombtn" data-domain="daily">🧴 日用品・美容</div>
+</div>
+
 <main>
 
   <!-- ADD VIEW -->
@@ -332,10 +344,11 @@
           <div class="catbtn" data-cat="食品" style="flex-basis: 30%;">🍚 食品</div>
           <div class="catbtn" data-cat="調味料" style="flex-basis: 30%;">🧂 調味料</div>
           <div class="catbtn" data-cat="お菓子" style="flex-basis: 30%;">🍪 お菓子</div>
-          <div class="catbtn" data-cat="乳製品" style="flex-basis: 30%;">🥛 乳製品</div>
+          <div class="catbtn" data-cat="チーズ" style="flex-basis: 30%;">🧀 チーズ</div>
           <div class="catbtn" data-cat="お酒" style="flex-basis: 30%;">🍺 お酒</div>
           <div class="catbtn" data-cat="冷凍食品" style="flex-basis: 30%;">🧊 冷凍食品</div>
           <div class="catbtn" data-cat="消耗品" style="flex-basis: 30%;">🧻 消耗品</div>
+          <div class="catbtn" data-cat="化粧品" style="flex-basis: 30%;">💄 化粧品</div>
           <div class="catbtn" data-cat="その他" style="flex-basis: 30%;">🛒 その他</div>
         </div>
       </div>
@@ -430,10 +443,11 @@
       <div class="catbtn" data-fcat="食品" style="flex-basis: 22%;">🍚 食品</div>
       <div class="catbtn" data-fcat="調味料" style="flex-basis: 22%;">🧂 調味料</div>
       <div class="catbtn" data-fcat="お菓子" style="flex-basis: 22%;">🍪 お菓子</div>
-      <div class="catbtn" data-fcat="乳製品" style="flex-basis: 22%;">🥛 乳製品</div>
+      <div class="catbtn" data-fcat="チーズ" style="flex-basis: 22%;">🧀 チーズ</div>
       <div class="catbtn" data-fcat="お酒" style="flex-basis: 22%;">🍺 お酒</div>
       <div class="catbtn" data-fcat="冷凍食品" style="flex-basis: 22%;">🧊 冷凍食品</div>
       <div class="catbtn" data-fcat="消耗品" style="flex-basis: 22%;">🧻 消耗品</div>
+      <div class="catbtn" data-fcat="化粧品" style="flex-basis: 22%;">💄 化粧品</div>
       <div class="catbtn" data-fcat="その他" style="flex-basis: 22%;">🛒 その他</div>
     </div>
     <input type="text" class="search" id="searchBox" placeholder="商品名・メーカーで検索...">
@@ -455,10 +469,11 @@
       <div class="catbtn" data-fcat="食品" style="flex-basis: 22%;">🍚 食品</div>
       <div class="catbtn" data-fcat="調味料" style="flex-basis: 22%;">🧂 調味料</div>
       <div class="catbtn" data-fcat="お菓子" style="flex-basis: 22%;">🍪 お菓子</div>
-      <div class="catbtn" data-fcat="乳製品" style="flex-basis: 22%;">🥛 乳製品</div>
+      <div class="catbtn" data-fcat="チーズ" style="flex-basis: 22%;">🧀 チーズ</div>
       <div class="catbtn" data-fcat="お酒" style="flex-basis: 22%;">🍺 お酒</div>
       <div class="catbtn" data-fcat="冷凍食品" style="flex-basis: 22%;">🧊 冷凍食品</div>
       <div class="catbtn" data-fcat="消耗品" style="flex-basis: 22%;">🧻 消耗品</div>
+      <div class="catbtn" data-fcat="化粧品" style="flex-basis: 22%;">💄 化粧品</div>
       <div class="catbtn" data-fcat="その他" style="flex-basis: 22%;">🛒 その他</div>
     </div>
     <div id="storeRanking"></div>
@@ -666,6 +681,10 @@ async function loadEntries() {
     entries = value ? JSON.parse(value) : [];
     entriesLoaded = true;
     recoverPending("entries");
+    // category renamed: 乳製品 -> チーズ (update older records and save once)
+    let renamed = 0;
+    entries.forEach(e => { if (e.category === "乳製品") { e.category = "チーズ"; renamed++; } });
+    if (renamed > 0) startSave("entries", `カテゴリ名を変更(乳製品→チーズ ${renamed}件)`);
   } catch (e) {
     console.error("読み込みエラー:", e);
     entries = [];
@@ -1292,6 +1311,7 @@ function startEdit(entry) {
     document.getElementById("price").style.background = "";
   }
 
+  ensureDomainFor(entry.category);
   currentCat = entry.category;
   document.querySelectorAll("#catRow .catbtn").forEach(b => b.classList.toggle("active", b.dataset.cat === currentCat));
   setUnit(entry.unit);
@@ -1320,6 +1340,7 @@ function copyEntry(entry) {
   document.getElementById("price").readOnly = false;
   document.getElementById("price").style.background = "";
 
+  ensureDomainFor(entry.category);
   currentCat = entry.category;
   document.querySelectorAll("#catRow .catbtn").forEach(b => b.classList.toggle("active", b.dataset.cat === currentCat));
   setUnit(entry.unit);
@@ -1364,7 +1385,7 @@ function populateMakerFilter() {
   const sel = document.getElementById("makerFilter");
   const current = sel.value;
   const makers = [...new Set(entries
-    .filter(e => e.maker && (currentFilterCat === "全て" || e.category === currentFilterCat))
+    .filter(e => e.maker && catDomainOk(e.category) && (currentFilterCat === "全て" || e.category === currentFilterCat))
     .map(e => canonOf("maker", e.maker)))].sort((a, b) => a.localeCompare(b, "ja"));
   sel.innerHTML = `<option value="">すべてのメーカー</option>` + makers.map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join("");
   sel.value = makers.includes(current) ? current : "";
@@ -1394,6 +1415,7 @@ function renderList() {
   const groups = {};
   entries.forEach(e => {
     if (q && !matchKey(e.itemName).includes(matchKey(q)) && !matchKey(e.groupName || "").includes(matchKey(q)) && !matchKey(e.maker || "").includes(matchKey(q))) return;
+    if (!catDomainOk(e.category)) return;
     if (currentFilterCat !== "全て" && e.category !== currentFilterCat) return;
     if (makerSel && matchKey(e.maker || "") !== matchKey(makerSel)) return;
     const gName = gOf(e);
@@ -1523,7 +1545,7 @@ function renderStoreView() {
     return;
   }
 
-  const filtered = entries.filter(e => currentStoreFilterCat === "全て" || e.category === currentStoreFilterCat);
+  const filtered = entries.filter(e => catDomainOk(e.category) && (currentStoreFilterCat === "全て" || e.category === currentStoreFilterCat));
 
   if (filtered.length === 0) {
     rankingEl.innerHTML = "";
@@ -1912,6 +1934,38 @@ function populateStoreSelect() {
 }
 
 // ---- Category buttons: show only the most-used ones, tuck the rest behind 「もっと見る」 ----
+// ---- 分野の切り替え: 食品 / 日用品・美容 (all tabs follow it) ----
+const DAILY_CATS = ["消耗品", "化粧品"];
+let currentDomain = "food";
+try { if (localStorage.getItem("grocery-domain-v1") === "daily") currentDomain = "daily"; } catch (e) {}
+// カテゴリ「その他」は両方の分野に出る
+function catDomainOk(cat) {
+  if (cat === "その他") return true;
+  return currentDomain === "daily" ? DAILY_CATS.includes(cat) : !DAILY_CATS.includes(cat);
+}
+function syncDomainButtons() {
+  document.querySelectorAll(".dombtn").forEach(b => b.classList.toggle("active", b.dataset.domain === currentDomain));
+}
+function setDomain(d) {
+  currentDomain = d;
+  try { localStorage.setItem("grocery-domain-v1", d); } catch (e) {}
+  syncDomainButtons();
+  // the filters and the selected category go back to something that exists in this domain
+  currentFilterCat = "全て";
+  currentStoreFilterCat = "全て";
+  document.querySelectorAll("#filterCatRow .catbtn").forEach(b => b.classList.toggle("active", b.dataset.fcat === "全て"));
+  document.querySelectorAll("#storeFilterCatRow .catbtn").forEach(b => b.classList.toggle("active", b.dataset.fcat === "全て"));
+  if (!catDomainOk(currentCat)) currentCat = d === "daily" ? "消耗品" : "野菜";
+  document.querySelectorAll("#catRow .catbtn").forEach(b => b.classList.toggle("active", b.dataset.cat === currentCat));
+  renderAll();
+}
+function ensureDomainFor(cat) {
+  if (!catDomainOk(cat)) setDomain(currentDomain === "daily" ? "food" : "daily");
+}
+document.querySelectorAll(".dombtn").forEach(b => {
+  b.addEventListener("click", () => { if (b.dataset.domain !== currentDomain) setDomain(b.dataset.domain); });
+});
+
 const CAT_KEEP = 7; // number of categories shown before collapsing (全て not counted)
 const catRowExpanded = {};
 function collapseCats() {
@@ -1921,7 +1975,9 @@ function collapseCats() {
     const row = document.getElementById(rowId);
     if (!row) return;
     row.querySelectorAll(".catmore").forEach(el => el.remove());
-    const btns = [...row.querySelectorAll(".catbtn")].filter(b => b.dataset[attr] !== "全て");
+    const all = [...row.querySelectorAll(".catbtn")].filter(b => b.dataset[attr] !== "全て");
+    all.forEach(b => b.classList.toggle("dom-hidden", !catDomainOk(b.dataset[attr])));
+    const btns = all.filter(b => catDomainOk(b.dataset[attr]));
     const top = new Set(
       btns.map((b, i) => ({ b, i, n: counts[b.dataset[attr]] || 0 }))
         .sort((x, y) => y.n - x.n || x.i - y.i)
@@ -2214,6 +2270,9 @@ function copyStoreInfo(name) {
   document.getElementById("siStoreName").focus();
 }
 
+syncDomainButtons();
+if (currentDomain === "daily") currentCat = "消耗品";
+document.querySelectorAll("#catRow .catbtn").forEach(b => b.classList.toggle("active", b.dataset.cat === currentCat));
 loadEntries();
 loadStoreInfo();
 loadSettings();
