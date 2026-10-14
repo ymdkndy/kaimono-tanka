@@ -349,6 +349,12 @@
           <div class="catbtn" data-cat="冷凍食品" style="flex-basis: 30%;">🧊 冷凍食品</div>
           <div class="catbtn" data-cat="消耗品" style="flex-basis: 30%;">🧻 消耗品</div>
           <div class="catbtn" data-cat="化粧品" style="flex-basis: 30%;">💄 化粧品</div>
+          <div class="catbtn" data-cat="お風呂" style="flex-basis: 30%;">🛁 お風呂</div>
+          <div class="catbtn" data-cat="掃除" style="flex-basis: 30%;">🧹 掃除</div>
+          <div class="catbtn" data-cat="メイク" style="flex-basis: 30%;">💄 メイク</div>
+          <div class="catbtn" data-cat="スキンケア" style="flex-basis: 30%;">🧴 スキンケア</div>
+          <div class="catbtn" data-cat="生理用品" style="flex-basis: 30%;">🌸 生理用品</div>
+          <div class="catbtn" data-cat="薬" style="flex-basis: 30%;">💊 薬</div>
           <div class="catbtn" data-cat="その他" style="flex-basis: 30%;">🛒 その他</div>
         </div>
       </div>
@@ -417,6 +423,14 @@
         <input type="text" id="memo" lang="ja" autocomplete="off" placeholder="例: 無洗米、あら塩">
       </div>
 
+      <div class="field">
+        <div class="hint" style="margin:0; display:flex; gap:10px; align-items:center;">
+          <span>📅 購入日: <b id="buyDateLabel">今日</b></span>
+          <span id="buyDateChange" style="color:var(--accent); font-weight:700; text-decoration:underline; cursor:pointer;">変更</span>
+        </div>
+        <input type="date" id="buyDate" style="display:none; margin-top:6px; width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--line); background:#FCFAF7; font-size:15px; color:var(--ink); font-family:inherit;">
+      </div>
+
       <div class="preview" id="preview" style="display:none;">
         <div class="price" id="previewPrice">-</div>
         <div class="label" id="previewLabel">単価</div>
@@ -448,10 +462,18 @@
       <div class="catbtn" data-fcat="冷凍食品" style="flex-basis: 22%;">🧊 冷凍食品</div>
       <div class="catbtn" data-fcat="消耗品" style="flex-basis: 22%;">🧻 消耗品</div>
       <div class="catbtn" data-fcat="化粧品" style="flex-basis: 22%;">💄 化粧品</div>
+      <div class="catbtn" data-fcat="お風呂" style="flex-basis: 22%;">🛁 お風呂</div>
+      <div class="catbtn" data-fcat="掃除" style="flex-basis: 22%;">🧹 掃除</div>
+      <div class="catbtn" data-fcat="メイク" style="flex-basis: 22%;">💄 メイク</div>
+      <div class="catbtn" data-fcat="スキンケア" style="flex-basis: 22%;">🧴 スキンケア</div>
+      <div class="catbtn" data-fcat="生理用品" style="flex-basis: 22%;">🌸 生理用品</div>
+      <div class="catbtn" data-fcat="薬" style="flex-basis: 22%;">💊 薬</div>
       <div class="catbtn" data-fcat="その他" style="flex-basis: 22%;">🛒 その他</div>
     </div>
+    <div class="catrow" id="listChips" style="flex-wrap: wrap; margin-bottom: 10px; display: none;"></div>
     <input type="text" class="search" id="searchBox" placeholder="商品名・メーカーで検索...">
     <select id="makerFilter" style="width:100%; margin-bottom:12px; padding:11px 12px; border-radius:10px; border:1px solid var(--line); background:#FCFAF7; font-size:15px; color:var(--ink); font-family:inherit; display:none;"></select>
+    <div id="listCompare"></div>
     <div id="listContent"></div>
   </div>
 
@@ -474,6 +496,12 @@
       <div class="catbtn" data-fcat="冷凍食品" style="flex-basis: 22%;">🧊 冷凍食品</div>
       <div class="catbtn" data-fcat="消耗品" style="flex-basis: 22%;">🧻 消耗品</div>
       <div class="catbtn" data-fcat="化粧品" style="flex-basis: 22%;">💄 化粧品</div>
+      <div class="catbtn" data-fcat="お風呂" style="flex-basis: 22%;">🛁 お風呂</div>
+      <div class="catbtn" data-fcat="掃除" style="flex-basis: 22%;">🧹 掃除</div>
+      <div class="catbtn" data-fcat="メイク" style="flex-basis: 22%;">💄 メイク</div>
+      <div class="catbtn" data-fcat="スキンケア" style="flex-basis: 22%;">🧴 スキンケア</div>
+      <div class="catbtn" data-fcat="生理用品" style="flex-basis: 22%;">🌸 生理用品</div>
+      <div class="catbtn" data-fcat="薬" style="flex-basis: 22%;">💊 薬</div>
       <div class="catbtn" data-fcat="その他" style="flex-basis: 22%;">🛒 その他</div>
     </div>
     <div id="storeRanking"></div>
@@ -809,6 +837,9 @@ function recoverPending(kind) {
     const saved = JSON.parse(p[kind]);
     let count = 0;
     if (kind === "settings") {
+      Object.keys(saved.lists || {}).forEach(n => {
+        if (JSON.stringify(appSettings.lists[n]) !== JSON.stringify(saved.lists[n])) { appSettings.lists[n] = saved.lists[n]; count++; }
+      });
       Object.keys(saved.mergeCount || {}).forEach(k => {
         if (appSettings.mergeCount[k] !== saved.mergeCount[k]) { appSettings.mergeCount[k] = saved.mergeCount[k]; count++; }
       });
@@ -904,20 +935,21 @@ function gOf(e) { return canonOf("group", e.groupName || e.itemName); }
 
 // ---- App settings (saved in the sheet too) + count-unit merging ----
 const SETTINGS_KEY = "grocery-settings-v1";
-let appSettings = { mergeCount: {} }; // matchKey(group name) -> true: compare 個/袋/パック/束 together
+let appSettings = { mergeCount: {}, lists: {} }; // lists: name -> [matchKey of product group names] // matchKey(group name) -> true: compare 個/袋/パック/束 together
 let settingsLoaded = false;
 const COUNT_UNITS = ["個", "袋", "パック", "束"];
 
 async function loadSettings() {
   try {
     const value = await sheetGet(SETTINGS_KEY);
-    appSettings = value ? JSON.parse(value) : { mergeCount: {} };
+    appSettings = value ? JSON.parse(value) : { mergeCount: {}, lists: {} };
     if (!appSettings.mergeCount) appSettings.mergeCount = {};
+    if (!appSettings.lists) appSettings.lists = {};
     settingsLoaded = true;
     recoverPending("settings");
   } catch (e) {
     console.error("読み込みエラー:", e);
-    appSettings = { mergeCount: {} };
+    appSettings = { mergeCount: {}, lists: {} };
     showStatus("⚠️ 設定を読み込めなかったよ。保存は止めてあるので、ページを再読み込みしてね", true);
   }
   renderAll();
@@ -945,6 +977,27 @@ function parseQty(str) {
     return (typeof v === "number" && isFinite(v)) ? v : NaN;
   } catch (e) { return NaN; }
 }
+
+// ---- 購入日 (defaults to today; can be changed) ----
+function isoOf(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function isoToday() { return isoOf(new Date()); }
+function isoFromEntry(e) { return e.dateISO || (e.ts ? isoOf(new Date(e.ts)) : isoToday()); }
+function mdOfIso(iso) { const [, m, d] = iso.split("-").map(Number); return `${m}/${d}`; }
+function tsOfIso(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  const now = new Date();
+  return new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds()).getTime();
+}
+function setBuyDate(iso, open) {
+  const inp = document.getElementById("buyDate");
+  inp.value = iso;
+  document.getElementById("buyDateLabel").textContent = iso === isoToday() ? "今日" : mdOfIso(iso);
+  inp.style.display = open ? "block" : "none";
+}
+function resetBuyDate() { setBuyDate(isoToday(), false); }
+
 
 function unitLabel(unit) {
   if (unit === "g" || unit === "kg") return "100gあたり";
@@ -1094,6 +1147,15 @@ function setUnit(unit) {
   document.getElementById(id).addEventListener("input", updatePreview);
 });
 
+document.getElementById("buyDateChange").addEventListener("click", () => {
+  const inp = document.getElementById("buyDate");
+  inp.style.display = inp.style.display === "none" ? "block" : "none";
+});
+document.getElementById("buyDate").addEventListener("change", () => {
+  const iso = document.getElementById("buyDate").value || isoToday();
+  document.getElementById("buyDateLabel").textContent = iso === isoToday() ? "今日" : mdOfIso(iso);
+});
+
 function updateQtyCalc() {
   const raw = document.getElementById("qty").value.trim();
   const el = document.getElementById("qtyCalc");
@@ -1192,6 +1254,7 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
   const unitPrice = computeUnitPrice(price, qty, currentUnit);
 
   const wasEditing = !!editingId;
+  const buyIso = document.getElementById("buyDate").value || isoToday();
   if (editingId) {
     const idx = entries.findIndex(en => en.id === editingId);
     if (idx !== -1) {
@@ -1203,6 +1266,7 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
         unitPrice, unitKey: normUnitKey(currentUnit),
         label: unitLabel(currentUnit),
         memo, maker, originalPrice, discountType, discountValue, discountLabel,
+        ...(buyIso !== isoFromEntry(entries[idx]) ? { date: mdOfIso(buyIso), dateISO: buyIso, ts: tsOfIso(buyIso) } : {}),
       };
     }
     resetEditState();
@@ -1215,14 +1279,16 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
       unitPrice, unitKey: normUnitKey(currentUnit),
       label: unitLabel(currentUnit),
       memo, maker, originalPrice, discountType, discountValue, discountLabel,
-      date: todayStr(),
-      ts: Date.now()
+      date: mdOfIso(buyIso),
+      dateISO: buyIso,
+      ts: buyIso === isoToday() ? Date.now() : tsOfIso(buyIso)
     });
   }
 
   saveEntries(`${itemName}(${storeName})`); // not awaited: keep recording while it saves
 
   unitManual = false;
+  resetBuyDate();
   document.getElementById("maker").value = "";
   if (wasEditing) document.getElementById("storeName").value = ""; // keep the shop selected while recording new items
   document.getElementById("itemName").value = "";
@@ -1249,6 +1315,7 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
 document.getElementById("cancelEditBtn").addEventListener("click", () => {
   resetEditState();
   unitManual = false;
+  resetBuyDate();
   document.getElementById("maker").value = "";
   document.getElementById("storeName").value = "";
   document.getElementById("itemName").value = "";
@@ -1283,6 +1350,7 @@ function startEdit(entry) {
   document.getElementById("qty").value = entry.qty;
   document.getElementById("memo").value = entry.memo || "";
   document.getElementById("maker").value = entry.maker || "";
+  { const iso = isoFromEntry(entry); setBuyDate(iso, true); }
 
   // discountType covers new-format entries; discountPercent is kept for entries saved before this update
   const legacyPercent = entry.discountPercent;
@@ -1332,6 +1400,7 @@ function copyEntry(entry) {
   document.getElementById("qty").value = entry.qty;
   document.getElementById("memo").value = entry.memo || "";
   document.getElementById("maker").value = entry.maker || "";
+  resetBuyDate();
 
   // Price and discount are left blank/off since those are the details most likely to change on a repeat purchase
   document.getElementById("price").value = "";
@@ -1401,7 +1470,114 @@ document.getElementById("filterCatRow").addEventListener("click", (e) => {
   renderList();
 });
 
+// ---- 比べるリスト (e.g. 「サラダ」「芋類」): pick products, then view only those side by side ----
+let currentList = "";
+
+function listsOf(groupNm) {
+  const k = matchKey(groupNm);
+  return Object.keys(appSettings.lists).filter(n => appSettings.lists[n].includes(k));
+}
+
+function renderListChips() {
+  const box = document.getElementById("listChips");
+  const names = Object.keys(appSettings.lists);
+  if (currentList && !appSettings.lists[currentList]) currentList = "";
+  if (names.length === 0) { box.style.display = "none"; box.innerHTML = ""; return; }
+  box.style.display = "flex";
+  box.innerHTML = [`<div class="catbtn ${currentList ? '' : 'active'}" data-list="" style="flex:0 0 auto; padding:8px 12px;">すべて</div>`]
+    .concat(names.map(n => `<div class="catbtn ${n === currentList ? 'active' : ''}" data-list="${escapeHtml(n)}" style="flex:0 0 auto; padding:8px 12px;">☆ ${escapeHtml(n)}</div>`))
+    .concat(currentList ? [`<div data-list-del="1" style="flex:0 0 auto; padding:8px 6px; font-size:12px; color:var(--sub); text-decoration:underline; cursor:pointer;">このリストを削除</div>`] : [])
+    .join("");
+  box.querySelectorAll("[data-list]").forEach(el => {
+    el.addEventListener("click", () => { currentList = el.dataset.list; renderList(); });
+  });
+  const del = box.querySelector("[data-list-del]");
+  if (del) del.addEventListener("click", () => {
+    showConfirm(`リスト「${currentList}」を削除する?(商品の記録は消えないよ)`, () => {
+      const name = currentList;
+      delete appSettings.lists[name];
+      currentList = "";
+      saveSettings(`リスト削除: ${name}`);
+      renderList();
+    });
+  });
+}
+
+function openListPicker(groupNm) {
+  let ov = document.getElementById("listPickerOverlay");
+  if (!ov) {
+    ov = document.createElement("div");
+    ov.id = "listPickerOverlay";
+    ov.style.cssText = "position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:100; display:flex; align-items:center; justify-content:center; padding:20px;";
+    document.body.appendChild(ov);
+  }
+  ov.style.display = "flex";
+  const k = matchKey(groupNm);
+  const draw = () => {
+    const names = Object.keys(appSettings.lists);
+    ov.innerHTML = `<div style="background:#fff; border-radius:16px; padding:18px; width:100%; max-width:340px; max-height:80vh; overflow:auto; color:#333;">
+      <div style="font-weight:700; margin-bottom:10px;">「${escapeHtml(groupNm)}」を入れるリスト</div>
+      ${names.length ? names.map(n => `<label style="display:flex; align-items:center; gap:10px; padding:8px 0; font-size:15px;">
+        <input type="checkbox" data-pick="${escapeHtml(n)}" ${appSettings.lists[n].includes(k) ? 'checked' : ''} style="width:18px; height:18px;"> ${escapeHtml(n)}</label>`).join("") : `<div class="hint" style="margin-bottom:8px;">まだリストがないよ。下で作ってね</div>`}
+      <div style="display:flex; gap:8px; margin-top:10px;">
+        <input type="text" id="newListName" lang="ja" placeholder="新しいリスト名(例: サラダ)" style="flex:1;">
+        <button class="bigbtn" id="newListBtn" style="width:auto; padding:0 14px;">作る</button>
+      </div>
+      <button class="bigbtn" id="listPickerClose" style="margin-top:12px; background:#eee; color:#333;">閉じる</button>
+    </div>`;
+    ov.querySelectorAll("[data-pick]").forEach(cb => {
+      cb.addEventListener("change", () => {
+        const arr = appSettings.lists[cb.dataset.pick];
+        const i = arr.indexOf(k);
+        if (cb.checked && i === -1) arr.push(k);
+        if (!cb.checked && i !== -1) arr.splice(i, 1);
+        saveSettings(`リスト: ${cb.dataset.pick}`);
+        renderList();
+      });
+    });
+    const make = () => {
+      const name = cleanName(document.getElementById("newListName").value);
+      if (!name) return;
+      if (!appSettings.lists[name]) appSettings.lists[name] = [];
+      if (!appSettings.lists[name].includes(k)) appSettings.lists[name].push(k);
+      saveSettings(`リスト作成: ${name}`);
+      renderList();
+      draw();
+    };
+    document.getElementById("newListBtn").addEventListener("click", make);
+    document.getElementById("newListName").addEventListener("keydown", (e) => { if (e.key === "Enter") make(); });
+    document.getElementById("listPickerClose").addEventListener("click", () => { ov.style.display = "none"; });
+  };
+  draw();
+}
+
+function renderListCompare(groups, groupKeys) {
+  const box = document.getElementById("listCompare");
+  if (!currentList || groupKeys.length === 0) { box.innerHTML = ""; return; }
+  const rows = groupKeys.map(key => {
+    const g = groups[key];
+    const sorted = g.list.slice().sort((a, b) => a.unitPrice - b.unitPrice);
+    const best = sorted[0];
+    const avg = g.list.reduce((a, e) => a + e.unitPrice, 0) / g.list.length;
+    const latest = g.list.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0))[0];
+    return `<tr>
+      <td style="padding:8px 4px; border-top:1px solid var(--line);"><b>${escapeHtml(g.groupName)}</b><div style="font-size:10.5px; color:var(--sub);">${g.label}</div></td>
+      <td style="padding:8px 4px; border-top:1px solid var(--line); text-align:right;">👑 <b>${fmt(best.unitPrice)}円</b><div style="font-size:10.5px; color:var(--sub);">${escapeHtml(currentStoreGroup(best))}</div></td>
+      <td style="padding:8px 4px; border-top:1px solid var(--line); text-align:right;">${fmt(avg)}円<div style="font-size:10.5px; color:var(--sub);">${g.list.length}件</div></td>
+      <td style="padding:8px 4px; border-top:1px solid var(--line); text-align:right;">${fmt(latest.unitPrice)}円<div style="font-size:10.5px; color:var(--sub);">${escapeHtml(latest.date || "")}</div></td>
+    </tr>`;
+  }).join("");
+  box.innerHTML = `<div class="card" style="margin-bottom:14px;">
+    <label style="display:block; font-size:12.5px; color:var(--sub); margin-bottom:6px; font-weight:600;">☆ ${escapeHtml(currentList)} の比較</label>
+    <table style="width:100%; border-collapse:collapse; font-size:13.5px;">
+      <tr style="color:var(--sub); font-size:11.5px;"><th style="text-align:left; padding:4px;">商品</th><th style="text-align:right; padding:4px;">最安</th><th style="text-align:right; padding:4px;">平均</th><th style="text-align:right; padding:4px;">前回</th></tr>
+      ${rows}
+    </table>
+  </div>`;
+}
+
 function renderList() {
+  renderListChips();
   populateMakerFilter();
   const makerSel = document.getElementById("makerFilter").value;
   const q = document.getElementById("searchBox").value.trim().toLowerCase();
@@ -1413,11 +1589,16 @@ function renderList() {
   }
 
   const groups = {};
+  const inListSet = currentList ? new Set(appSettings.lists[currentList] || []) : null;
   entries.forEach(e => {
     if (q && !matchKey(e.itemName).includes(matchKey(q)) && !matchKey(e.groupName || "").includes(matchKey(q)) && !matchKey(e.maker || "").includes(matchKey(q))) return;
-    if (!catDomainOk(e.category)) return;
-    if (currentFilterCat !== "全て" && e.category !== currentFilterCat) return;
-    if (makerSel && matchKey(e.maker || "") !== matchKey(makerSel)) return;
+    if (inListSet) {
+      if (!inListSet.has(matchKey(gOf(e)))) return; // a chosen list ignores the category / maker filters
+    } else {
+      if (!catDomainOk(e.category)) return;
+      if (currentFilterCat !== "全て" && e.category !== currentFilterCat) return;
+      if (makerSel && matchKey(e.maker || "") !== matchKey(makerSel)) return;
+    }
     const gName = gOf(e);
     const key = gName + "|" + ukOf(e);
     if (!groups[key]) groups[key] = { groupName: gName, label: labelOf(e), list: [] };
@@ -1425,6 +1606,8 @@ function renderList() {
   });
 
   const groupKeys = Object.keys(groups).sort((a,b) => groups[a].groupName.localeCompare(groups[b].groupName, 'ja'));
+
+  renderListCompare(groups, groupKeys);
 
   if (groupKeys.length === 0) {
     container.innerHTML = `<div class="empty">見つからなかった</div>`;
@@ -1463,12 +1646,16 @@ function renderList() {
         </div>`
       : "";
     return `<div class="item-group">
-      <h3>${escapeHtml(g.groupName)} <span style="font-size:11px;color:var(--sub);font-weight:400;">(${g.label})</span></h3>
+      <h3 style="display:flex; justify-content:space-between; align-items:center; gap:8px;"><span>${escapeHtml(g.groupName)} <span style="font-size:11px;color:var(--sub);font-weight:400;">(${g.label})</span></span><span data-star="${escapeHtml(g.groupName)}" style="cursor:pointer; font-size:19px; color:${listsOf(g.groupName).length ? '#E0A100' : 'var(--sub)'};">${listsOf(g.groupName).length ? '★' : '☆'}</span></h3>
       ${mergeLine(g.groupName)}
       ${rows}
       ${moreBtn}
     </div>`;
   }).join("");
+
+  container.querySelectorAll("[data-star]").forEach(el => {
+    el.addEventListener("click", (e) => { e.stopPropagation(); openListPicker(el.dataset.star); });
+  });
 
   container.querySelectorAll("[data-merge-toggle]").forEach(el => {
     el.addEventListener("click", (e) => {
@@ -1935,7 +2122,7 @@ function populateStoreSelect() {
 
 // ---- Category buttons: show only the most-used ones, tuck the rest behind 「もっと見る」 ----
 // ---- 分野の切り替え: 食品 / 日用品・美容 (all tabs follow it) ----
-const DAILY_CATS = ["消耗品", "化粧品"];
+const DAILY_CATS = ["消耗品", "化粧品", "お風呂", "掃除", "メイク", "スキンケア", "生理用品", "薬"];
 let currentDomain = "food";
 try { if (localStorage.getItem("grocery-domain-v1") === "daily") currentDomain = "daily"; } catch (e) {}
 // カテゴリ「その他」は両方の分野に出る
@@ -2270,6 +2457,7 @@ function copyStoreInfo(name) {
   document.getElementById("siStoreName").focus();
 }
 
+resetBuyDate();
 syncDomainButtons();
 if (currentDomain === "daily") currentCat = "消耗品";
 document.querySelectorAll("#catRow .catbtn").forEach(b => b.classList.toggle("active", b.dataset.cat === currentCat));
