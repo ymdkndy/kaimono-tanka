@@ -473,6 +473,20 @@
     <div class="catrow" id="listChips" style="flex-wrap: wrap; margin-bottom: 10px; display: none;"></div>
     <input type="text" class="search" id="searchBox" placeholder="商品名・メーカーで検索...">
     <select id="makerFilter" style="width:100%; margin-bottom:12px; padding:11px 12px; border-radius:10px; border:1px solid var(--line); background:#FCFAF7; font-size:15px; color:var(--ink); font-family:inherit; display:none;"></select>
+    <div id="listControls" style="display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
+      <select id="sortSel" style="flex:1 1 30%; min-width:0; padding:10px 8px; border-radius:10px; border:1px solid var(--line); background:#FCFAF7; font-size:14px; color:var(--ink); font-family:inherit;">
+        <option value="name">名前順</option>
+        <option value="recent">最近記録した順</option>
+        <option value="count">記録が多い順</option>
+      </select>
+      <select id="periodSel" style="flex:1 1 30%; min-width:0; padding:10px 8px; border-radius:10px; border:1px solid var(--line); background:#FCFAF7; font-size:14px; color:var(--ink); font-family:inherit;">
+        <option value="all">全期間</option>
+        <option value="30">直近1か月</option>
+        <option value="90">直近3か月</option>
+        <option value="180">直近半年</option>
+      </select>
+      <select id="storeSel" style="flex:1 1 30%; min-width:0; padding:10px 8px; border-radius:10px; border:1px solid var(--line); background:#FCFAF7; font-size:14px; color:var(--ink); font-family:inherit;"></select>
+    </div>
     <div id="listCompare"></div>
     <div id="listContent"></div>
   </div>
@@ -1472,6 +1486,30 @@ document.getElementById("filterCatRow").addEventListener("click", (e) => {
 
 // ---- 比べるリスト (e.g. 「サラダ」「芋類」): pick products, then view only those side by side ----
 let currentList = "";
+const PAGE_SIZE = 20;
+let listLimit = PAGE_SIZE;
+let lastListSig = "";
+const openCards = new Set(); // product cards currently opened (collapsed to one line by default)
+function lsGet(k, d) { try { return localStorage.getItem(k) || d; } catch (e) { return d; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+let listSort = lsGet("grocery-sort-v1", "name");
+let listPeriod = lsGet("grocery-period-v1", "all");
+let listStoreSel = "";
+
+function initListControls() {
+  const sortEl = document.getElementById("sortSel"), perEl = document.getElementById("periodSel"), stEl = document.getElementById("storeSel");
+  sortEl.value = listSort; perEl.value = listPeriod;
+  sortEl.addEventListener("change", () => { listSort = sortEl.value; lsSet("grocery-sort-v1", listSort); renderList(); });
+  perEl.addEventListener("change", () => { listPeriod = perEl.value; lsSet("grocery-period-v1", listPeriod); renderList(); });
+  stEl.addEventListener("change", () => { listStoreSel = stEl.value; renderList(); });
+}
+function populateStoreFilter() {
+  const sel = document.getElementById("storeSel");
+  const stores = [...new Set(entries.map(currentStoreGroup))].sort((a, b) => a.localeCompare(b, "ja"));
+  sel.innerHTML = `<option value="">すべてのお店</option>` + stores.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join("");
+  sel.value = stores.includes(listStoreSel) ? listStoreSel : "";
+  listStoreSel = sel.value;
+}
 
 function listsOf(groupNm) {
   const k = matchKey(groupNm);
@@ -1579,6 +1617,7 @@ function renderListCompare(groups, groupKeys) {
 function renderList() {
   renderListChips();
   populateMakerFilter();
+  populateStoreFilter();
   const makerSel = document.getElementById("makerFilter").value;
   const q = document.getElementById("searchBox").value.trim().toLowerCase();
   const container = document.getElementById("listContent");
@@ -1590,7 +1629,10 @@ function renderList() {
 
   const groups = {};
   const inListSet = currentList ? new Set(appSettings.lists[currentList] || []) : null;
+  const cutoff = listPeriod === "all" ? 0 : Date.now() - Number(listPeriod) * 86400000;
   entries.forEach(e => {
+    if (cutoff && (e.ts || 0) < cutoff) return; // older records are hidden, not deleted
+    if (listStoreSel && currentStoreGroup(e) !== listStoreSel) return;
     if (q && !matchKey(e.itemName).includes(matchKey(q)) && !matchKey(e.groupName || "").includes(matchKey(q)) && !matchKey(e.maker || "").includes(matchKey(q))) return;
     if (inListSet) {
       if (!inListSet.has(matchKey(gOf(e)))) return; // a chosen list ignores the category / maker filters
@@ -1605,9 +1647,20 @@ function renderList() {
     groups[key].list.push(e);
   });
 
-  const groupKeys = Object.keys(groups).sort((a,b) => groups[a].groupName.localeCompare(groups[b].groupName, 'ja'));
+  const byName = (a, b) => groups[a].groupName.localeCompare(groups[b].groupName, 'ja');
+  const latestTs = k => Math.max(...groups[k].list.map(e => e.ts || 0));
+  let groupKeys = Object.keys(groups);
+  if (listSort === "recent") groupKeys.sort((a, b) => latestTs(b) - latestTs(a) || byName(a, b));
+  else if (listSort === "count") groupKeys.sort((a, b) => groups[b].list.length - groups[a].list.length || byName(a, b));
+  else groupKeys.sort(byName);
 
   renderListCompare(groups, groupKeys);
+
+  // paging: start with 20 products; the rest behind a button
+  const sig = JSON.stringify([q, currentFilterCat, makerSel, currentList, listSort, listPeriod, listStoreSel, currentDomain]);
+  if (sig !== lastListSig) { lastListSig = sig; listLimit = PAGE_SIZE; }
+  const totalKeys = groupKeys.length;
+  groupKeys = groupKeys.slice(0, listLimit);
 
   if (groupKeys.length === 0) {
     container.innerHTML = `<div class="empty">見つからなかった</div>`;
@@ -1620,6 +1673,18 @@ function renderList() {
     const min = g.list[0].unitPrice;
     const isExpanded = expandedGroups.has(key);
     const visibleList = isExpanded ? g.list : g.list.slice(0, 1);
+    const isOpen = openCards.has(key);
+    const starHtml = `<span data-star="${escapeHtml(g.groupName)}" style="cursor:pointer; font-size:19px; color:${listsOf(g.groupName).length ? '#E0A100' : 'var(--sub)'};">${listsOf(g.groupName).length ? '★' : '☆'}</span>`;
+    if (!isOpen) {
+      const b = g.list[0];
+      return `<div class="item-group" style="padding-top:2px; padding-bottom:2px;">
+        <div data-card-toggle="${escapeHtml(key)}" style="display:flex; justify-content:space-between; align-items:center; gap:8px; cursor:pointer; padding:9px 0;">
+          <div style="min-width:0;"><b>${escapeHtml(g.groupName)}</b> <span style="font-size:11px;color:var(--sub);">(${g.label}) ▼</span>
+            <div style="font-size:11.5px; color:var(--sub);">👑 ${escapeHtml(currentStoreGroup(b))}・${g.list.length}件</div></div>
+          <div style="display:flex; align-items:center; gap:10px;"><b>${fmt(b.unitPrice)}円</b>${starHtml}</div>
+        </div>
+      </div>`;
+    }
     const rows = visibleList.map(e => {
       const isBest = e.unitPrice === min;
       const showVariant = matchKey(e.itemName) !== matchKey(g.groupName);
@@ -1646,12 +1711,35 @@ function renderList() {
         </div>`
       : "";
     return `<div class="item-group">
-      <h3 style="display:flex; justify-content:space-between; align-items:center; gap:8px;"><span>${escapeHtml(g.groupName)} <span style="font-size:11px;color:var(--sub);font-weight:400;">(${g.label})</span></span><span data-star="${escapeHtml(g.groupName)}" style="cursor:pointer; font-size:19px; color:${listsOf(g.groupName).length ? '#E0A100' : 'var(--sub)'};">${listsOf(g.groupName).length ? '★' : '☆'}</span></h3>
+      <h3 style="display:flex; justify-content:space-between; align-items:center; gap:8px;"><span data-card-toggle="${escapeHtml(key)}" style="cursor:pointer;">${escapeHtml(g.groupName)} <span style="font-size:11px;color:var(--sub);font-weight:400;">(${g.label}) ▲</span></span>${starHtml}</h3>
       ${mergeLine(g.groupName)}
       ${rows}
       ${moreBtn}
     </div>`;
   }).join("");
+
+  // top bar (count + open/close all) and the "more" button
+  const allKeys = Object.keys(groups);
+  container.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:var(--sub); margin-bottom:8px;">
+      <span>${totalKeys}商品${cutoff ? '(古い記録は隠してるよ)' : ''}</span>
+      <span><span data-open-all="1" style="cursor:pointer; text-decoration:underline; margin-right:12px;">全部開く</span><span data-close-all="1" style="cursor:pointer; text-decoration:underline;">全部たたむ</span></span>
+    </div>` + container.innerHTML +
+    (totalKeys > groupKeys.length
+      ? `<div class="entry-row" data-more-products="1" style="cursor:pointer; justify-content:center; color:var(--accent); font-weight:700; font-size:13px; margin-top:6px;">さらに${Math.min(PAGE_SIZE, totalKeys - groupKeys.length)}商品を見る(残り${totalKeys - groupKeys.length})</div>`
+      : "");
+  container.querySelectorAll("[data-card-toggle]").forEach(el => {
+    el.addEventListener("click", () => {
+      const k = el.dataset.cardToggle;
+      if (openCards.has(k)) openCards.delete(k); else openCards.add(k);
+      renderList();
+    });
+  });
+  const openAll = container.querySelector("[data-open-all]");
+  if (openAll) openAll.addEventListener("click", () => { allKeys.forEach(k => openCards.add(k)); renderList(); });
+  const closeAll = container.querySelector("[data-close-all]");
+  if (closeAll) closeAll.addEventListener("click", () => { openCards.clear(); renderList(); });
+  const moreP = container.querySelector("[data-more-products]");
+  if (moreP) moreP.addEventListener("click", () => { listLimit += PAGE_SIZE; renderList(); });
 
   container.querySelectorAll("[data-star]").forEach(el => {
     el.addEventListener("click", (e) => { e.stopPropagation(); openListPicker(el.dataset.star); });
@@ -2458,6 +2546,7 @@ function copyStoreInfo(name) {
 }
 
 resetBuyDate();
+initListControls();
 syncDomainButtons();
 if (currentDomain === "daily") currentCat = "消耗品";
 document.querySelectorAll("#catRow .catbtn").forEach(b => b.classList.toggle("active", b.dataset.cat === currentCat));
