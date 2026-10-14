@@ -123,6 +123,19 @@
     color: var(--sub);
   }
   .catbtn.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+  .catbtn.cat-hidden:not(.active) { display: none; }
+  .catmore {
+    flex: 1;
+    padding: 10px 4px;
+    border-radius: 10px;
+    border: 1.5px dashed var(--line);
+    background: transparent;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    cursor: pointer;
+  }
 
   .unitgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
   .unitbtn {
@@ -1286,6 +1299,27 @@ function setupAutocomplete(inputId, dropdownId, getOptions) {
   });
 }
 
+// Auto-fill グループ名 from past records when the typed 商品名 exactly matches a recorded one.
+// Only overwrites the field if it's empty or was filled automatically (never a hand-typed value).
+let groupAutoFilled = false;
+document.getElementById("groupName").addEventListener("keydown", () => { groupAutoFilled = false; });
+document.getElementById("groupName").addEventListener("paste", () => { groupAutoFilled = false; });
+document.getElementById("itemName").addEventListener("input", () => {
+  const gEl = document.getElementById("groupName");
+  const name = document.getElementById("itemName").value.trim();
+  if (gEl.value.trim() && !groupAutoFilled) return;
+  const past = entries.filter(e => e.itemName === name && e.groupName && e.groupName !== e.itemName)
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0))[0];
+  if (past) {
+    gEl.value = past.groupName;
+    groupAutoFilled = true;
+  } else if (groupAutoFilled) {
+    gEl.value = "";
+    groupAutoFilled = false;
+  }
+  updatePreview();
+});
+
 setupAutocomplete("itemName", "itemNameSuggest", () => [...new Set(entries.map(e => e.itemName))]);
 setupAutocomplete("groupName", "groupNameSuggest", () => [...new Set(entries.map(e => e.groupName || e.itemName))]);
 
@@ -1297,11 +1331,46 @@ function populateStoreSelect() {
   if (names.includes(current)) sel.value = current;
 }
 
+// ---- Category buttons: show only the most-used ones, tuck the rest behind 「もっと見る」 ----
+const CAT_KEEP = 7; // number of categories shown before collapsing (全て not counted)
+const catRowExpanded = {};
+function collapseCats() {
+  const counts = {};
+  entries.forEach(e => { counts[e.category] = (counts[e.category] || 0) + 1; });
+  [["catRow", "cat", "30%"], ["filterCatRow", "fcat", "22%"], ["storeFilterCatRow", "fcat", "22%"]].forEach(([rowId, attr, basis]) => {
+    const row = document.getElementById(rowId);
+    if (!row) return;
+    row.querySelectorAll(".catmore").forEach(el => el.remove());
+    const btns = [...row.querySelectorAll(".catbtn")].filter(b => b.dataset[attr] !== "全て");
+    const top = new Set(
+      btns.map((b, i) => ({ b, i, n: counts[b.dataset[attr]] || 0 }))
+        .sort((x, y) => y.n - x.n || x.i - y.i)
+        .slice(0, CAT_KEEP)
+        .map(x => x.b)
+    );
+    const expanded = !!catRowExpanded[rowId];
+    btns.forEach(b => b.classList.toggle("cat-hidden", !expanded && !top.has(b)));
+    const hiddenCount = btns.length - top.size;
+    if (hiddenCount > 0) {
+      const more = document.createElement("div");
+      more.className = "catmore";
+      more.style.flexBasis = basis;
+      more.textContent = expanded ? "▲ 閉じる" : `▼ 他${hiddenCount}件`;
+      more.addEventListener("click", () => {
+        catRowExpanded[rowId] = !catRowExpanded[rowId];
+        collapseCats();
+      });
+      row.appendChild(more);
+    }
+  });
+}
+
 function renderAll() {
   renderList();
   renderStoreView();
   updateDatalists();
   populateStoreSelect();
+  collapseCats();
 }
 
 // ---- Backup: export / import ----
