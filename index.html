@@ -562,35 +562,105 @@ let editingId = null;
 const STORAGE_KEY = "grocery-entries-v1";
 const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbzng3lRHp4yrugM3HhN_1tNXvj-AOMJriJdSbBl5iIFwNNnvBezbdeDO0OUger51mn1/exec";
 
-async function sheetGet(key) {
+// ---- Storage layer (Google Sheets via GAS) ----
+// Big values are split into chunks (a sheet cell holds ~50,000 chars max), every save is
+// verified by reading it back, and saving is blocked if loading failed (so we never overwrite
+// real data with an empty list).
+const CHUNK_SIZE = 20000;
+
+async function sheetGetRaw(key) {
   const res = await fetch(`${SHEET_API_URL}?key=${encodeURIComponent(key)}`);
+  if (!res.ok) throw new Error("HTTP " + res.status);
   const data = await res.json();
   return data.value;
 }
 
-async function sheetSet(key, value) {
+async function sheetSetRaw(key, value) {
   await fetch(SHEET_API_URL, {
     method: "POST",
     body: JSON.stringify({ key, value })
   });
 }
 
+async function sheetGet(key) {
+  const n = parseInt(await sheetGetRaw(key + "__n"), 10);
+  if (n > 0) {
+    const parts = [];
+    for (let i = 0; i < n; i++) {
+      const part = await sheetGetRaw(`${key}__${i}`);
+      if (part === null || part === undefined) throw new Error("chunk missing: " + i);
+      parts.push(String(part));
+    }
+    return parts.join("");
+  }
+  return await sheetGetRaw(key); // data saved before chunking existed
+}
+
+async function sheetSet(key, value) {
+  const chunks = [];
+  for (let i = 0; i < value.length; i += CHUNK_SIZE) chunks.push(value.slice(i, i + CHUNK_SIZE));
+  if (chunks.length === 0) chunks.push("");
+  for (let i = 0; i < chunks.length; i++) await sheetSetRaw(`${key}__${i}`, chunks[i]);
+  await sheetSetRaw(key + "__n", String(chunks.length)); // written last: switches readers to the new data
+  const back = await sheetGet(key);
+  if (back !== value) throw new Error("verify failed");
+}
+
+let statusTimer = null;
+function showStatus(msg, isError) {
+  let el = document.getElementById("saveStatus");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "saveStatus";
+    el.style.cssText = "position:fixed; top:8px; left:50%; transform:translateX(-50%); z-index:9999; max-width:92%; padding:9px 14px; border-radius:10px; font-size:13px; font-weight:700; box-shadow:0 2px 10px rgba(0,0,0,.2);";
+    el.addEventListener("click", () => { el.style.display = "none"; });
+    document.body.appendChild(el);
+  }
+  el.style.background = isError ? "#C0392B" : "#2E7D5B";
+  el.style.color = "#fff";
+  el.textContent = msg;
+  el.style.display = "block";
+  clearTimeout(statusTimer);
+  if (!isError) statusTimer = setTimeout(() => { el.style.display = "none"; }, 1800);
+}
+
+let saveChain = Promise.resolve(); // saves run one at a time, in order
+function queueSave(task) {
+  const run = saveChain.then(task, task);
+  saveChain = run.catch(() => {});
+  return run;
+}
+
+let entriesLoaded = false;
+let storeInfoLoaded = false;
+
 async function loadEntries() {
   try {
     const value = await sheetGet(STORAGE_KEY);
     entries = value ? JSON.parse(value) : [];
+    entriesLoaded = true;
   } catch (e) {
     console.error("読み込みエラー:", e);
     entries = [];
+    showStatus("⚠️ 記録を読み込めなかったよ。保存は止めてあるので、ページを再読み込みしてね", true);
   }
   renderAll();
 }
 
 async function saveEntries() {
+  if (!entriesLoaded) {
+    showStatus("⚠️ 読み込みができていないので保存しなかったよ。ページを再読み込みしてね", true);
+    return false;
+  }
+  const snapshot = JSON.stringify(entries);
   try {
-    await sheetSet(STORAGE_KEY, JSON.stringify(entries));
+    await queueSave(() => sheetSet(STORAGE_KEY, snapshot));
+    showStatus("保存したよ ✓", false);
+    return true;
   } catch (e) {
     console.error("Storage error:", e);
+    showStatus("⚠️ 保存できなかったかも。ページを再読み込みして記録が残っているか確認してね", true);
+    return false;
   }
 }
 
@@ -1484,9 +1554,11 @@ async function loadStoreInfo() {
   try {
     const value = await sheetGet(STOREINFO_KEY);
     storeInfoMap = value ? JSON.parse(value) : {};
+    storeInfoLoaded = true;
   } catch (e) {
     console.error("読み込みエラー:", e);
     storeInfoMap = {};
+    showStatus("⚠️ 店舗情報を読み込めなかったよ。保存は止めてあるので、ページを再読み込みしてね", true);
   }
   renderStoreInfoList();
   populateStoreSelect();
@@ -1494,10 +1566,19 @@ async function loadStoreInfo() {
 }
 
 async function saveStoreInfo() {
+  if (!storeInfoLoaded) {
+    showStatus("⚠️ 読み込みができていないので保存しなかったよ。ページを再読み込みしてね", true);
+    return false;
+  }
+  const snapshot = JSON.stringify(storeInfoMap);
   try {
-    await sheetSet(STOREINFO_KEY, JSON.stringify(storeInfoMap));
+    await queueSave(() => sheetSet(STOREINFO_KEY, snapshot));
+    showStatus("保存したよ ✓", false);
+    return true;
   } catch (e) {
     console.error("Storage error:", e);
+    showStatus("⚠️ 保存できなかったかも。ページを再読み込みして確認してね", true);
+    return false;
   }
 }
 
