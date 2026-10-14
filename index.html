@@ -529,6 +529,7 @@ let currentFilterCat = "全て";
 let currentStoreFilterCat = "全て";
 let expandedGroups = new Set();
 let rankingExpanded = false;
+let excludeDiscounted = false;
 let editingId = null;
 const STORAGE_KEY = "grocery-entries-v1";
 const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbzng3lRHp4yrugM3HhN_1tNXvj-AOMJriJdSbBl5iIFwNNnvBezbdeDO0OUger51mn1/exec";
@@ -1088,41 +1089,81 @@ function renderStoreView() {
 
   const groupKeys = Object.keys(groups).sort((a,b) => groups[a].groupName.localeCompare(groups[b].groupName, 'ja'));
 
-  // Ranking: only items recorded at 2+ stores are comparable; rank stores by win rate among those
-  const stats = {}; // store -> { compared, wins }
-  groupKeys.forEach(key => {
-    const byStore = groups[key].byStore;
-    const storeNames = Object.keys(byStore);
+  // Ranking: for each item recorded at 2+ stores, compare each store's AVERAGE price
+  // with the average across stores. A store's score = mean "% cheaper than average" over those items.
+  const isDiscounted = (e) => !!(e.discountType || e.discountLabel || e.discountPercent);
+  const rankingSource = excludeDiscounted ? filtered.filter(e => !isDiscounted(e)) : filtered;
+
+  const rankGroups = {}; // itemKey -> { store -> [unitPrice, ...] }
+  rankingSource.forEach(e => {
+    const key = (e.groupName || e.itemName) + "|" + e.unitKey;
+    const sName = currentStoreGroup(e);
+    if (!rankGroups[key]) rankGroups[key] = {};
+    if (!rankGroups[key][sName]) rankGroups[key][sName] = [];
+    rankGroups[key][sName].push(e.unitPrice);
+  });
+
+  const scoreStats = {}; // store -> { compared, sumPct }
+  Object.values(rankGroups).forEach(byStorePrices => {
+    const storeNames = Object.keys(byStorePrices);
     if (storeNames.length < 2) return; // nothing to compare against
-    const min = Math.min(...storeNames.map(s => byStore[s].unitPrice));
+    const storeAvg = {};
     storeNames.forEach(s => {
-      if (!stats[s]) stats[s] = { compared: 0, wins: 0 };
-      stats[s].compared += 1;
-      if (byStore[s].unitPrice === min) stats[s].wins += 1;
+      storeAvg[s] = byStorePrices[s].reduce((a, b) => a + b, 0) / byStorePrices[s].length;
+    });
+    const crossAvg = storeNames.reduce((a, s) => a + storeAvg[s], 0) / storeNames.length;
+    if (!crossAvg) return;
+    storeNames.forEach(s => {
+      if (!scoreStats[s]) scoreStats[s] = { compared: 0, sumPct: 0 };
+      scoreStats[s].compared += 1;
+      scoreStats[s].sumPct += (1 - storeAvg[s] / crossAvg) * 100;
     });
   });
-  const ranked = Object.entries(stats)
-    .map(([store, s]) => ({ store, compared: s.compared, wins: s.wins, rate: s.wins / s.compared }))
-    .sort((a, b) => b.rate - a.rate || b.compared - a.compared || b.wins - a.wins);
+
+  const MIN_COMPARED = 3;
+  const allScored = Object.entries(scoreStats)
+    .map(([store, s]) => ({ store, compared: s.compared, pct: s.sumPct / s.compared }));
+  const ranked = allScored
+    .filter(r => r.compared >= MIN_COMPARED)
+    .sort((a, b) => b.pct - a.pct || b.compared - a.compared);
+  const lowData = allScored
+    .filter(r => r.compared < MIN_COMPARED)
+    .sort((a, b) => b.compared - a.compared);
+
   const medals = ["🥇", "🥈", "🥉"];
+  const pctLabel = (pct) => {
+    const v = Math.round(Math.abs(pct) * 10) / 10;
+    if (v === 0) return "平均並み";
+    return pct > 0 ? `平均より${v}%安い` : `平均より${v}%高い`;
+  };
+
+  const rankingHeader = `
+    <label style="display:block; font-size:12.5px; color:var(--sub); margin-bottom:2px; font-weight:600;">お店の総合ランキング(平均より何%安いか)</label>
+    <div class="hint" style="margin-bottom:8px;">2店舗以上で記録がある商品を、各店の記録の平均価格で比べているよ。${MIN_COMPARED}品目以上で比較できたお店が対象。</div>
+    <label style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; color:var(--ink); margin-bottom:10px; cursor:pointer;">
+      <input type="checkbox" id="excludeDiscountToggle" ${excludeDiscounted ? 'checked' : ''} style="width:17px; height:17px;">
+      割引で買った記録を除く
+    </label>`;
+
+  let rankingBody;
   if (ranked.length > 0) {
-    rankingEl.innerHTML = `<div class="card">
-      <label style="display:block; font-size:12.5px; color:var(--sub); margin-bottom:2px; font-weight:600;">お店の総合ランキング(最安の勝率)</label>
-      <div class="hint" style="margin-bottom:8px;">2店舗以上で記録がある商品だけを対象に集計しているよ</div>
+    rankingBody = `
       ${(rankingExpanded ? ranked : ranked.slice(0, 3)).map((r, i) => `<div class="entry-row" style="${i===0 ? 'border-color:var(--accent); background:var(--accent-soft);' : ''}">
         <div class="entry-left"><span class="entry-store">${medals[i] || `${i+1}.`} ${escapeHtml(r.store)}</span></div>
-        <div class="entry-right">${Math.round(r.rate * 100)}%<small>${r.compared}品目中${r.wins}品目で最安</small></div>
+        <div class="entry-right">${pctLabel(r.pct)}<small>${r.compared}品目で比較</small></div>
       </div>`).join("")}
       ${ranked.length > 3 ? `<div class="entry-row" id="rankingToggle" style="cursor:pointer; justify-content:center; color:var(--accent); font-weight:700; font-size:12.5px;">
         ${rankingExpanded ? '閉じる' : `他${ranked.length - 3}件を見る`}
-      </div>` : ""}
-    </div>`;
+      </div>` : ""}`;
   } else {
-    rankingEl.innerHTML = `<div class="card">
-      <label style="display:block; font-size:12.5px; color:var(--sub); margin-bottom:2px; font-weight:600;">お店の総合ランキング(最安の勝率)</label>
-      <div class="hint">同じ商品を2店舗以上で記録すると、ここにランキングが出るよ</div>
-    </div>`;
+    rankingBody = `<div class="hint">同じ商品を2店舗以上で記録して、${MIN_COMPARED}品目以上で比較できたお店が出ると、ここにランキングが出るよ</div>`;
   }
+
+  const lowDataHtml = lowData.length > 0
+    ? `<div class="hint" style="margin-top:8px;">データ不足(${MIN_COMPARED}品目未満)で順位なし: ${lowData.map(r => `${escapeHtml(r.store)}(${r.compared}品目)`).join("、")}</div>`
+    : "";
+
+  rankingEl.innerHTML = `<div class="card">${rankingHeader}${rankingBody}${lowDataHtml}</div>`;
 
   const rankingToggleEl = document.getElementById("rankingToggle");
   if (rankingToggleEl) {
@@ -1131,6 +1172,10 @@ function renderStoreView() {
       renderStoreView();
     });
   }
+  document.getElementById("excludeDiscountToggle").addEventListener("change", (e) => {
+    excludeDiscounted = e.target.checked;
+    renderStoreView();
+  });
 
   container.innerHTML = "";
   const groupAllPrices = {};
