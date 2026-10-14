@@ -303,7 +303,9 @@
     <div class="card">
       <div class="field">
         <label>お店</label>
-        <select id="storeName" style="width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--line); background:#FCFAF7; font-size:15px; color:var(--ink); font-family:inherit;">
+        <select id="storeGroupPick" style="width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--line); background:#FCFAF7; font-size:15px; color:var(--ink); font-family:inherit;"><option value="">お店グループを選択</option></select>
+        <select id="storePick" style="width:100%; margin-top:8px; padding:11px 12px; border-radius:10px; border:1px solid var(--line); background:#FCFAF7; font-size:15px; color:var(--ink); font-family:inherit;"><option value="">店舗を選択</option></select>
+        <select id="storeName" style="display:none;">
           <option value="">お店を選択</option>
         </select>
         <div class="hint">一覧にないときは「店舗情報」タブで先に登録してね</div>
@@ -2254,12 +2256,83 @@ document.getElementById("tidyAllBtn").addEventListener("click", () => {
   renderTidy();
 });
 
+// The real value lives in the hidden #storeName (all stores). The two visible selects (グループ → 店舗) mirror it.
+(function hookStoreValue() {
+  const el = document.getElementById("storeName");
+  const nat = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value");
+  Object.defineProperty(el, "value", {
+    configurable: true,
+    get() { return nat.get.call(this); },
+    set(v) { nat.set.call(this, v); syncStorePickers(); }
+  });
+})();
+
+function groupOfStore(name) {
+  const info = storeInfoMap[name];
+  return (info && info.storeGroup && info.storeGroup.trim()) || name;
+}
+function parentOfStore(name) {
+  const info = storeInfoMap[name];
+  return (info && info.parentGroup && info.parentGroup.trim()) || "";
+}
+function storesOfGroup(g) {
+  return Object.keys(storeInfoMap).filter(n => groupOfStore(n) === g).sort((a, b) => a.localeCompare(b, 'ja'));
+}
+
+function buildGroupPick(selected) {
+  const gp = document.getElementById("storeGroupPick");
+  const groups = [...new Set(Object.keys(storeInfoMap).map(groupOfStore))].sort((a, b) => a.localeCompare(b, 'ja'));
+  const byParent = {};
+  groups.forEach(g => {
+    const p = parentOfStore(storesOfGroup(g)[0]) || "";
+    (byParent[p] = byParent[p] || []).push(g);
+  });
+  const opt = g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`;
+  gp.innerHTML = `<option value="">お店グループを選択</option>`
+    + (byParent[""] || []).map(opt).join("")
+    + Object.keys(byParent).filter(Boolean).sort((a, b) => a.localeCompare(b, 'ja'))
+        .map(p => `<optgroup label="${escapeHtml(p)}">${byParent[p].map(opt).join("")}</optgroup>`).join("");
+  gp.value = groups.includes(selected) ? selected : "";
+}
+
+function fillStorePick(g, selected) {
+  const sp = document.getElementById("storePick");
+  const stores = g ? storesOfGroup(g) : [];
+  // a group with just one shop that has the same name doesn't need a second step
+  const needSecond = stores.length > 1 || (stores.length === 1 && stores[0] !== g);
+  sp.innerHTML = `<option value="">店舗を選択</option>` + stores.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join("");
+  sp.style.display = needSecond ? "block" : "none";
+  sp.value = stores.includes(selected) ? selected : "";
+}
+
+function syncStorePickers() {
+  const v = document.getElementById("storeName").value;
+  const g = v ? groupOfStore(v) : "";
+  buildGroupPick(g);
+  fillStorePick(g, v);
+}
+
+document.getElementById("storeGroupPick").addEventListener("change", () => {
+  const g = document.getElementById("storeGroupPick").value;
+  const stores = g ? storesOfGroup(g) : [];
+  const el = document.getElementById("storeName");
+  const nat = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value");
+  fillStorePick(g, "");
+  // exactly one shop in the group -> pick it automatically; otherwise wait for the second choice
+  nat.set.call(el, stores.length === 1 ? stores[0] : "");
+  if (stores.length === 1) document.getElementById("storePick").value = stores[0];
+});
+document.getElementById("storePick").addEventListener("change", () => {
+  const el = document.getElementById("storeName");
+  Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(el, document.getElementById("storePick").value);
+});
+
 function populateStoreSelect() {
   const sel = document.getElementById("storeName");
   const names = Object.keys(storeInfoMap).sort((a,b) => a.localeCompare(b, 'ja'));
   const current = sel.value;
   sel.innerHTML = `<option value="">お店を選択</option>` + names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join("");
-  if (names.includes(current)) sel.value = current;
+  sel.value = names.includes(current) ? current : "";
 }
 
 // ---- Category buttons: show only the most-used ones, tuck the rest behind 「もっと見る」 ----
