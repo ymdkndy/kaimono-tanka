@@ -553,6 +553,12 @@
         <input type="text" id="siStoreName" lang="ja" autocomplete="off" placeholder="例: サミット〇〇店">
       </div>
       <div class="field">
+        <label>系列(親グループ)(任意)</label>
+        <input type="text" id="siParentGroup" list="siParentGroupList" lang="ja" autocomplete="off" placeholder="例: ドン・キホーテグループ">
+        <datalist id="siParentGroupList"></datalist>
+        <div class="hint">グループのさらに上の括り。例:「ドン・キホーテグループ」→「アピタ」→「知立店」</div>
+      </div>
+      <div class="field">
         <label>お店グループ名(任意)</label>
         <input type="text" id="siStoreGroup" list="siStoreGroupList" lang="ja" autocomplete="off" placeholder="空欄なら店舗名と同じ扱いになる">
         <datalist id="siStoreGroupList"></datalist>
@@ -1505,11 +1511,38 @@ function initListControls() {
   perEl.addEventListener("change", () => { listPeriod = perEl.value; lsSet("grocery-period-v1", listPeriod); renderList(); });
   stEl.addEventListener("change", () => { listStoreSel = stEl.value; renderList(); });
 }
+// store filter: 系列 (p:) > グループ (g:) > 店舗 (s:)  e.g. ドン・キホーテグループ > アピタ > 知立店
+function matchStoreFilter(e, v) {
+  if (!v) return true;
+  const kind = v.slice(0, 2), name = v.slice(2);
+  if (kind === "p:") return currentParent(e) === name;
+  if (kind === "g:") return currentStoreGroup(e) === name;
+  return e.storeName === name;
+}
 function populateStoreFilter() {
   const sel = document.getElementById("storeSel");
-  const stores = [...new Set(entries.map(currentStoreGroup))].sort((a, b) => a.localeCompare(b, "ja"));
-  sel.innerHTML = `<option value="">すべてのお店</option>` + stores.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join("");
-  sel.value = stores.includes(listStoreSel) ? listStoreSel : "";
+  const tree = {}; // parent -> group -> Set(storeName)
+  entries.forEach(e => {
+    const p = currentParent(e), g = currentStoreGroup(e);
+    if (!tree[p]) tree[p] = {};
+    if (!tree[p][g]) tree[p][g] = new Set();
+    tree[p][g].add(e.storeName);
+  });
+  const opts = [{ v: "", l: "すべてのお店" }];
+  const addGroups = (p, indent) => {
+    Object.keys(tree[p]).sort((a, b) => a.localeCompare(b, "ja")).forEach(g => {
+      opts.push({ v: "g:" + g, l: indent + g });
+      const stores = [...tree[p][g]].filter(n => n !== g).sort((a, b) => a.localeCompare(b, "ja"));
+      stores.forEach(n => opts.push({ v: "s:" + n, l: indent + "　" + n }));
+    });
+  };
+  Object.keys(tree).filter(Boolean).sort((a, b) => a.localeCompare(b, "ja")).forEach(p => {
+    opts.push({ v: "p:" + p, l: "🏢 " + p + "(全部)" });
+    addGroups(p, "　");
+  });
+  if (tree[""]) addGroups("", "");
+  sel.innerHTML = opts.map(o => `<option value="${escapeHtml(o.v)}">${escapeHtml(o.l)}</option>`).join("");
+  sel.value = opts.some(o => o.v === listStoreSel) ? listStoreSel : "";
   listStoreSel = sel.value;
 }
 
@@ -1634,7 +1667,7 @@ function renderList() {
   const cutoff = listPeriod === "all" ? 0 : Date.now() - Number(listPeriod) * 86400000;
   entries.forEach(e => {
     if (cutoff && (e.ts || 0) < cutoff) return; // older records are hidden, not deleted
-    if (listStoreSel && currentStoreGroup(e) !== listStoreSel) return;
+    if (!matchStoreFilter(e, listStoreSel)) return;
     if (q && !matchKey(e.itemName).includes(matchKey(q)) && !matchKey(e.groupName || "").includes(matchKey(q)) && !matchKey(e.maker || "").includes(matchKey(q))) return;
     if (inListSet) {
       if (!inListSet.has(matchKey(gOf(e)))) return; // a chosen list ignores the category / maker filters
@@ -1805,6 +1838,11 @@ document.getElementById("storeFilterCatRow").addEventListener("click", (e) => {
   btn.classList.add("active");
   renderStoreView();
 });
+
+function currentParent(e) {
+  const info = storeInfoMap[e.storeName];
+  return (info && info.parentGroup && info.parentGroup.trim()) || "";
+}
 
 function currentStoreGroup(e) {
   const info = storeInfoMap[e.storeName];
@@ -2420,6 +2458,7 @@ function resetStoreInfoForm() {
   editingStoreKey = null;
   document.getElementById("siStoreName").value = "";
   document.getElementById("siStoreGroup").value = "";
+  document.getElementById("siParentGroup").value = "";
   document.getElementById("siAddress").value = "";
   document.getElementById("siOpenTime").value = "";
   document.getElementById("siCloseTime").value = "";
@@ -2434,6 +2473,7 @@ document.getElementById("siSaveBtn").addEventListener("click", async () => {
   const storeName = document.getElementById("siStoreName").value.trim();
   if (!storeName) { alert("店舗名を入力してね"); return; }
   const storeGroup = document.getElementById("siStoreGroup").value.trim() || storeName;
+  const parentGroup = document.getElementById("siParentGroup").value.trim();
   const address = document.getElementById("siAddress").value.trim();
   const open = document.getElementById("siOpenTime").value;
   const close = document.getElementById("siCloseTime").value;
@@ -2442,7 +2482,7 @@ document.getElementById("siSaveBtn").addEventListener("click", async () => {
   if (editingStoreKey && editingStoreKey !== storeName) {
     delete storeInfoMap[editingStoreKey];
   }
-  storeInfoMap[storeName] = { storeGroup, address, hours: { open, close }, parking: currentParking, memo };
+  storeInfoMap[storeName] = { storeGroup, parentGroup, address, hours: { open, close }, parking: currentParking, memo };
   await saveStoreInfo();
   resetStoreInfoForm();
   renderStoreInfoList();
@@ -2455,6 +2495,8 @@ document.getElementById("siCancelBtn").addEventListener("click", resetStoreInfoF
 function updateStoreGroupDatalist() {
   const groupsSet = [...new Set(Object.values(storeInfoMap).map(i => i.storeGroup).filter(Boolean))];
   document.getElementById("siStoreGroupList").innerHTML = groupsSet.map(g => `<option value="${escapeHtml(g)}">`).join("");
+  const parents = [...new Set(Object.values(storeInfoMap).map(i => i.parentGroup).filter(Boolean))];
+  document.getElementById("siParentGroupList").innerHTML = parents.map(g => `<option value="${escapeHtml(g)}">`).join("");
 }
 
 function startEditStoreInfo(storeName) {
@@ -2463,6 +2505,7 @@ function startEditStoreInfo(storeName) {
   editingStoreKey = storeName;
   document.getElementById("siStoreName").value = storeName;
   document.getElementById("siStoreGroup").value = (info.storeGroup && info.storeGroup !== storeName) ? info.storeGroup : "";
+  document.getElementById("siParentGroup").value = info.parentGroup || "";
   document.getElementById("siAddress").value = info.address || "";
   document.getElementById("siOpenTime").value = (info.hours && info.hours.open) || "";
   document.getElementById("siCloseTime").value = (info.hours && info.hours.close) || "";
@@ -2489,8 +2532,27 @@ function renderStoreInfoList() {
     groups[gName].push(name);
   });
   const groupKeys = Object.keys(groups).sort((a,b) => a.localeCompare(b, 'ja'));
+  // parent (系列) of each group = the parent set on any of its stores
+  const parentOfGroup = {};
+  groupKeys.forEach(g => {
+    const withParent = groups[g].map(n => (storeInfoMap[n].parentGroup || "").trim()).find(Boolean);
+    parentOfGroup[g] = withParent || "";
+  });
+  const parentNames = [...new Set(Object.values(parentOfGroup).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ja'));
+  const orderedGroups = [];
+  parentNames.forEach(pn => {
+    orderedGroups.push({ parent: pn, header: true });
+    groupKeys.filter(g => parentOfGroup[g] === pn).forEach(g => orderedGroups.push({ g }));
+  });
+  const noParent = groupKeys.filter(g => !parentOfGroup[g]);
+  if (parentNames.length && noParent.length) orderedGroups.push({ parent: "系列なし", header: true });
+  noParent.forEach(g => orderedGroups.push({ g }));
 
-  container.innerHTML = groupKeys.map(gName => {
+  container.innerHTML = orderedGroups.map(item => {
+    if (item.header) {
+      return `<div style="font-weight:700; font-size:14px; margin:16px 2px 6px; color:var(--ink);">🏢 ${escapeHtml(item.parent)}</div>`;
+    }
+    const gName = item.g;
     const storeNames = groups[gName].sort((a,b) => a.localeCompare(b, 'ja'));
     const rows = storeNames.map(name => {
       const info = storeInfoMap[name];
@@ -2550,6 +2612,7 @@ function copyStoreInfo(name) {
   editingStoreKey = null;
   document.getElementById("siStoreName").value = "";
   document.getElementById("siStoreGroup").value = (info.storeGroup && info.storeGroup !== name) ? info.storeGroup : name;
+  document.getElementById("siParentGroup").value = info.parentGroup || "";
   document.getElementById("siAddress").value = info.address || "";
   document.getElementById("siOpenTime").value = (info.hours && info.hours.open) || "";
   document.getElementById("siCloseTime").value = (info.hours && info.hours.close) || "";
