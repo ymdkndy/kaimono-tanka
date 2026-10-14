@@ -149,6 +149,8 @@
     color: var(--sub);
   }
   .unitbtn.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+  .unitbtn.cat-hidden:not(.active) { display: none; }
+  .unitbtn.unitmore { border-style: dashed; background: transparent; color: var(--accent); cursor: pointer; }
 
   .bigbtn {
     width: 100%;
@@ -307,6 +309,12 @@
         <div class="hint">名前は違うけど同じ種類の商品(例:「とろ～りスライスチーズ」「とろけるスライスチーズ」→どちらも「スライスチーズ」)をまとめて比較したいときに使ってね</div>
       </div>
 
+      <div class="field" style="position:relative;">
+        <label>メーカー名(任意)</label>
+        <input type="text" id="maker" lang="ja" autocomplete="off" placeholder="例: 明治、カゴメ">
+        <div id="makerSuggest" class="suggest-dropdown"></div>
+      </div>
+
       <div class="field">
         <label>カテゴリ</label>
         <div class="catrow" id="catRow" style="flex-wrap: wrap;">
@@ -320,6 +328,8 @@
           <div class="catbtn" data-cat="食品" style="flex-basis: 30%;">🍚 食品</div>
           <div class="catbtn" data-cat="調味料" style="flex-basis: 30%;">🧂 調味料</div>
           <div class="catbtn" data-cat="お菓子" style="flex-basis: 30%;">🍪 お菓子</div>
+          <div class="catbtn" data-cat="乳製品" style="flex-basis: 30%;">🥛 乳製品</div>
+          <div class="catbtn" data-cat="冷凍食品" style="flex-basis: 30%;">🧊 冷凍食品</div>
           <div class="catbtn" data-cat="消耗品" style="flex-basis: 30%;">🧻 消耗品</div>
           <div class="catbtn" data-cat="その他" style="flex-basis: 30%;">🛒 その他</div>
         </div>
@@ -375,6 +385,7 @@
           <div class="unitbtn" data-unit="本">本</div>
           <div class="unitbtn" data-unit="パック">パック</div>
           <div class="unitbtn" data-unit="袋">袋</div>
+          <div class="unitbtn" data-unit="束">束</div>
         </div>
       </div>
 
@@ -409,6 +420,8 @@
       <div class="catbtn" data-fcat="食品" style="flex-basis: 22%;">🍚 食品</div>
       <div class="catbtn" data-fcat="調味料" style="flex-basis: 22%;">🧂 調味料</div>
       <div class="catbtn" data-fcat="お菓子" style="flex-basis: 22%;">🍪 お菓子</div>
+      <div class="catbtn" data-fcat="乳製品" style="flex-basis: 22%;">🥛 乳製品</div>
+      <div class="catbtn" data-fcat="冷凍食品" style="flex-basis: 22%;">🧊 冷凍食品</div>
       <div class="catbtn" data-fcat="消耗品" style="flex-basis: 22%;">🧻 消耗品</div>
       <div class="catbtn" data-fcat="その他" style="flex-basis: 22%;">🛒 その他</div>
     </div>
@@ -430,6 +443,8 @@
       <div class="catbtn" data-fcat="食品" style="flex-basis: 22%;">🍚 食品</div>
       <div class="catbtn" data-fcat="調味料" style="flex-basis: 22%;">🧂 調味料</div>
       <div class="catbtn" data-fcat="お菓子" style="flex-basis: 22%;">🍪 お菓子</div>
+      <div class="catbtn" data-fcat="乳製品" style="flex-basis: 22%;">🥛 乳製品</div>
+      <div class="catbtn" data-fcat="冷凍食品" style="flex-basis: 22%;">🧊 冷凍食品</div>
       <div class="catbtn" data-fcat="消耗品" style="flex-basis: 22%;">🧻 消耗品</div>
       <div class="catbtn" data-fcat="その他" style="flex-basis: 22%;">🛒 その他</div>
     </div>
@@ -689,7 +704,7 @@ document.getElementById("catRow").addEventListener("click", (e) => {
 
 document.getElementById("unitGrid").addEventListener("click", (e) => {
   const btn = e.target.closest(".unitbtn");
-  if (!btn) return;
+  if (!btn || btn.classList.contains("unitmore")) return;
   setUnit(btn.dataset.unit);
 });
 
@@ -753,6 +768,7 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
   const price = parseFloat(document.getElementById("price").value);
   const qty = parseFloat(document.getElementById("qty").value);
   const memo = document.getElementById("memo").value.trim();
+  const maker = document.getElementById("maker").value.trim();
   const isDiscount = document.getElementById("discountToggle").checked;
   let originalPrice = null, discountType = null, discountValue = null, discountLabel = null;
   if (isDiscount) {
@@ -782,7 +798,7 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
         price, qty, unit: currentUnit,
         unitPrice, unitKey: normUnitKey(currentUnit),
         label: unitLabel(currentUnit),
-        memo, originalPrice, discountType, discountValue, discountLabel,
+        memo, maker, originalPrice, discountType, discountValue, discountLabel,
       };
     }
     resetEditState();
@@ -794,7 +810,7 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
       price, qty, unit: currentUnit,
       unitPrice, unitKey: normUnitKey(currentUnit),
       label: unitLabel(currentUnit),
-      memo, originalPrice, discountType, discountValue, discountLabel,
+      memo, maker, originalPrice, discountType, discountValue, discountLabel,
       date: todayStr(),
       ts: Date.now()
     });
@@ -802,6 +818,7 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
 
   await saveEntries();
 
+  document.getElementById("maker").value = "";
   document.getElementById("storeName").value = "";
   document.getElementById("itemName").value = "";
   document.getElementById("groupName").value = "";
@@ -823,6 +840,7 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
 
 document.getElementById("cancelEditBtn").addEventListener("click", () => {
   resetEditState();
+  document.getElementById("maker").value = "";
   document.getElementById("storeName").value = "";
   document.getElementById("itemName").value = "";
   document.getElementById("groupName").value = "";
@@ -854,6 +872,7 @@ function startEdit(entry) {
   document.getElementById("price").value = entry.price;
   document.getElementById("qty").value = entry.qty;
   document.getElementById("memo").value = entry.memo || "";
+  document.getElementById("maker").value = entry.maker || "";
 
   // discountType covers new-format entries; discountPercent is kept for entries saved before this update
   const legacyPercent = entry.discountPercent;
@@ -901,6 +920,7 @@ function copyEntry(entry) {
   document.getElementById("groupName").value = (entry.groupName && entry.groupName !== entry.itemName) ? entry.groupName : "";
   document.getElementById("qty").value = entry.qty;
   document.getElementById("memo").value = entry.memo || "";
+  document.getElementById("maker").value = entry.maker || "";
 
   // Price and discount are left blank/off since those are the details most likely to change on a repeat purchase
   document.getElementById("price").value = "";
@@ -994,7 +1014,7 @@ function renderList() {
         <div class="entry-left">
           <span class="entry-store"><span class="crown">${isBest ? '👑' : ''}</span>${escapeHtml(e.storeName)}</span>
           <span class="entry-date">${e.date}</span>
-          ${showVariant ? `<div style="font-size:11px;color:var(--sub);margin-top:2px;">${escapeHtml(e.itemName)}</div>` : ''}
+          ${(showVariant || e.maker) ? `<div style="font-size:11px;color:var(--sub);margin-top:2px;">${[showVariant ? escapeHtml(e.itemName) : '', e.maker ? `🏭 ${escapeHtml(e.maker)}` : ''].filter(Boolean).join(' ・ ')}</div>` : ''}
           ${e.memo ? `<div style="font-size:11px;color:var(--sub);margin-top:2px;">${escapeHtml(e.memo)}</div>` : ''}
         </div>
         <div style="display:flex; align-items:center; gap:6px;">
@@ -1320,6 +1340,7 @@ document.getElementById("itemName").addEventListener("input", () => {
   updatePreview();
 });
 
+setupAutocomplete("maker", "makerSuggest", () => [...new Set(entries.map(e => e.maker).filter(Boolean))]);
 setupAutocomplete("itemName", "itemNameSuggest", () => [...new Set(entries.map(e => e.itemName))]);
 setupAutocomplete("groupName", "groupNameSuggest", () => [...new Set(entries.map(e => e.groupName || e.itemName))]);
 
@@ -1365,7 +1386,38 @@ function collapseCats() {
   });
 }
 
+// Units use the same rule as categories: most-used first, rest behind 「もっと見る」
+const UNIT_KEEP = 6;
+function collapseUnits() {
+  const grid = document.getElementById("unitGrid");
+  if (!grid) return;
+  const counts = {};
+  entries.forEach(e => { counts[e.unit] = (counts[e.unit] || 0) + 1; });
+  grid.querySelectorAll(".unitmore").forEach(el => el.remove());
+  const btns = [...grid.querySelectorAll(".unitbtn")];
+  const top = new Set(
+    btns.map((b, i) => ({ b, i, n: counts[b.dataset.unit] || 0 }))
+      .sort((x, y) => y.n - x.n || x.i - y.i)
+      .slice(0, UNIT_KEEP)
+      .map(x => x.b)
+  );
+  const expanded = !!catRowExpanded.unitGrid;
+  btns.forEach(b => b.classList.toggle("cat-hidden", !expanded && !top.has(b)));
+  const hiddenCount = btns.length - top.size;
+  if (hiddenCount > 0) {
+    const more = document.createElement("div");
+    more.className = "unitbtn unitmore";
+    more.textContent = expanded ? "▲ 閉じる" : `▼ 他${hiddenCount}件`;
+    more.addEventListener("click", () => {
+      catRowExpanded.unitGrid = !catRowExpanded.unitGrid;
+      collapseUnits();
+    });
+    grid.appendChild(more);
+  }
+}
+
 function renderAll() {
+  collapseUnits();
   renderList();
   renderStoreView();
   updateDatalists();
