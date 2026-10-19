@@ -202,6 +202,7 @@
   .mm-name { font-size: 15.5px; font-weight: 600; }
   .mm-row.done .mm-name { text-decoration: line-through; color: var(--sub); font-weight: 400; }
   .mm-info { font-size: 12px; color: var(--sub); margin-top: 2px; }
+  .mm-row .mm-btn { padding: 6px 10px; font-size: 12px; }
   .mm-x { flex: 0 0 auto; color: var(--sub); font-size: 13px; padding: 4px 6px; cursor: pointer; }
   .kk-nav { border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 8px 16px; font-size: 15px; color: var(--ink); cursor: pointer; }
   .kk-nav:disabled { opacity: .35; cursor: default; }
@@ -561,6 +562,8 @@
         <button class="mm-btn" id="memoListAddBtn">リストから追加</button>
       </div>
     </div>
+    <div class="card" id="memoFav"></div>
+    <div class="card" id="memoCompare" style="display:none;"></div>
     <div class="card" id="memoBody"></div>
   </div>
   <!-- KAKEI VIEW -->
@@ -822,6 +825,7 @@ function recordsOf(kind) {
     Object.keys(lists).forEach(n => m.set("list:" + n, JSON.stringify(lists[n])));
     Object.keys(appSettings.mergeCount || {}).forEach(k => m.set("merge:" + k, JSON.stringify(appSettings.mergeCount[k])));
     m.set("meta:listOrder", JSON.stringify(Object.keys(lists)));
+    m.set("meta:favStores", JSON.stringify(Array.isArray(appSettings.favStores) ? appSettings.favStores : []));
   }
   return m;
 }
@@ -848,6 +852,8 @@ function upsertLocal(kind, id, obj) {
     appSettings.mergeCount[id.slice(6)] = obj;
   } else if (id === "meta:listOrder") {
     appSettings.lists = orderLists(appSettings.lists, obj);
+  } else if (id === "meta:favStores") {
+    appSettings.favStores = Array.isArray(obj) ? obj : [];
   }
 }
 function removeLocal(kind, id) {
@@ -902,7 +908,7 @@ function refreshAfterRemote() {
 
 // Put the full list from the server into memory (first load)
 function applyAll(data) {
-  entries = []; storeInfoMap = {}; appSettings = { mergeCount: {}, lists: {} }; memoItems = [];
+  entries = []; storeInfoMap = {}; appSettings = { mergeCount: {}, lists: {}, favStores: [] }; memoItems = [];
   Object.keys(synced).forEach(k => synced[k].clear());
   const lists = {};
   let order = null;
@@ -916,6 +922,7 @@ function applyAll(data) {
     else if (it.id.startsWith("list:")) lists[it.id.slice(5)] = obj;
     else if (it.id.startsWith("merge:")) appSettings.mergeCount[it.id.slice(6)] = obj;
     else if (it.id === "meta:listOrder") order = obj;
+    else if (it.id === "meta:favStores") appSettings.favStores = Array.isArray(obj) ? obj : [];
   });
   appSettings.lists = orderLists(lists, order);
   lastSync = data.now || 0;
@@ -1080,7 +1087,7 @@ async function initData() {
     if (renamed > 0) startSave("entries", `カテゴリ名を変更(乳製品→チーズ ${renamed}件)`);
   } catch (e) {
     console.error("読み込みエラー:", e);
-    entries = []; storeInfoMap = {}; appSettings = { mergeCount: {}, lists: {} }; memoItems = [];
+    entries = []; storeInfoMap = {}; appSettings = { mergeCount: {}, lists: {}, favStores: [] }; memoItems = [];
     showStatus(e && e.userMessage ? e.userMessage : "⚠️ 記録を読み込めなかったよ。保存は止めてあるので、ページを再読み込みしてね", true);
   }
   refreshAfterRemote();
@@ -1211,6 +1218,7 @@ function recoverPending(kind) {
       Object.keys(saved.mergeCount || {}).forEach(k => {
         if (appSettings.mergeCount[k] !== saved.mergeCount[k]) { appSettings.mergeCount[k] = saved.mergeCount[k]; count++; }
       });
+      if (Array.isArray(saved.favStores) && saved.favStores.length && JSON.stringify(saved.favStores) !== JSON.stringify(appSettings.favStores || [])) { appSettings.favStores = saved.favStores; count++; }
     } else if (kind === "store") {
       Object.keys(saved).forEach(name => {
         if (JSON.stringify(storeInfoMap[name]) !== JSON.stringify(saved[name])) { storeInfoMap[name] = saved[name]; count++; }
@@ -1309,7 +1317,7 @@ function gOf(e) { return canonOf("group", e.groupName || e.itemName); }
 
 // ---- App settings (saved in the sheet too) + count-unit merging ----
 const SETTINGS_KEY = "grocery-settings-v1";
-let appSettings = { mergeCount: {}, lists: {} }; // lists: name -> [matchKey of product group names] // matchKey(group name) -> true: compare 個/袋/パック/束 together
+let appSettings = { mergeCount: {}, lists: {}, favStores: [] }; // lists: name -> [matchKey of product group names] // matchKey(group name) -> true: compare 個/袋/パック/束 together
 let settingsLoaded = false;
 const COUNT_UNITS = ["個", "袋", "パック", "束"];
 
@@ -1645,7 +1653,7 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
   }
 
   saveEntries(`${itemName}(${storeName})`); // not awaited: keep recording while it saves
-  if (!wasEditing) autoCheckMemo(itemName, groupName);
+  if (!wasEditing) autoCheckMemo(itemName, groupName, storeName, buyIso);
 
   unitManual = false;
   makerAutoFilled = false;
@@ -2897,12 +2905,39 @@ function renderAll() {
 }
 
 // ---- 買い物メモ ----
-let memoMode = "list"; // "list" = in the order added, "store" = grouped by the cheapest shop
-const MEMO_FRESH_DAYS = 90; // prices older than this are only used when nothing newer exists
+// Flow: add what to buy -> tick it when it goes in the basket (no price needed) -> later, with the
+// receipt, tap ✎記録 on it (name / shop / date are filled in) -> after saving it becomes "記録済み".
+let memoMode = "list";        // "list" = in the order added, "store" = grouped by the cheapest shop
+let favPickerOpen = false;    // the "いつものお店を選ぶ" picker
+let memoDetailOpen = false;   // per-item table in the "どこで済ませる?" card
+let recordingMemoId = null;   // memo item that ✎記録 sent to the record screen
+const MEMO_FRESH_DAYS = 90;   // prices older than this are only used when nothing newer exists
 function saveMemo(label) { return startSave("memo", label || "買い物メモ"); }
+function favStores() { return Array.isArray(appSettings.favStores) ? appSettings.favStores : []; }
 
-// cheapest known price for a product (compared within the unit it was last bought in)
-function memoStats(name) {
+function storeLabel(name) {
+  const info = storeInfoMap[name];
+  const g = info && info.storeGroup && info.storeGroup.trim();
+  return g && g !== name ? `${g} ${name}` : name;
+}
+function allStoreNames() {
+  const cnt = {};
+  entries.forEach(e => { if (e.storeName) cnt[e.storeName] = (cnt[e.storeName] || 0) + 1; });
+  Object.keys(storeInfoMap).forEach(n => { if (!(n in cnt)) cnt[n] = 0; });
+  favStores().forEach(n => { if (!(n in cnt)) cnt[n] = 0; });
+  return Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a] || a.localeCompare(b, "ja"));
+}
+
+// the shop being visited today (this device only; forgotten the next day)
+function getTodayStore() {
+  try {
+    const o = JSON.parse(lsGet("grocery-todaystore-v1", "null"));
+    return o && o.date === isoToday() && favStores().includes(o.store) ? o.store : "";
+  } catch (e) { return ""; }
+}
+function setTodayStore(s) { lsSet("grocery-todaystore-v1", JSON.stringify({ store: s, date: isoToday() })); }
+
+function memoPool(name) {
   const key = matchKey(name);
   const all = entries.filter(e => matchKey(gOf(e)) === key || matchKey(e.itemName) === key);
   if (!all.length) return null;
@@ -2910,9 +2945,43 @@ function memoStats(name) {
   const recent = all.filter(e => (e.ts || 0) >= cutoff);
   const pool = recent.length ? recent : all;
   const latest = pool.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0))[0];
-  const uk = ukOf(latest);
-  const best = pool.filter(e => ukOf(e) === uk).sort((a, b) => a.unitPrice - b.unitPrice)[0];
-  return { best, latest, stale: recent.length === 0 };
+  return { all, pool, latest, stale: recent.length === 0 };
+}
+// cheapest known price for a product (compared within the unit it was last bought in)
+function memoStats(name) {
+  const p = memoPool(name);
+  if (!p) return null;
+  const uk = ukOf(p.latest);
+  const best = p.pool.filter(e => ukOf(e) === uk).sort((a, b) => a.unitPrice - b.unitPrice)[0];
+  return { best, latest: p.latest, stale: p.stale };
+}
+
+// Estimated cost of the remaining items at each favourite shop. The amount is what you usually buy
+// (last purchase); each shop's latest unit price is applied to it. Missing shops are filled with the average of the others.
+function memoCompare(items, stores) {
+  const totals = {}; stores.forEach(s => { totals[s] = { sum: 0, real: 0, fake: 0 }; });
+  const rows = [], noData = [];
+  items.forEach(m => {
+    const p = memoPool(m.name);
+    if (!p || !(p.latest.unitPrice > 0)) { noData.push(m.name); return; }
+    const uk = ukOf(p.latest);
+    const amount = p.latest.price / p.latest.unitPrice;
+    const est = {};
+    stores.forEach(s => {
+      const c = p.all.filter(e => e.storeName === s && ukOf(e) === uk).sort((a, b) => (b.ts || 0) - (a.ts || 0))[0];
+      est[s] = c ? { v: c.unitPrice * amount, real: true } : null;
+    });
+    const known = stores.filter(s => est[s]).map(s => est[s].v);
+    if (!known.length) { noData.push(m.name); return; }
+    const avg = known.reduce((a, b) => a + b, 0) / known.length;
+    stores.forEach(s => {
+      if (!est[s]) est[s] = { v: avg, real: false };
+      totals[s].sum += est[s].v;
+      if (est[s].real) totals[s].real++; else totals[s].fake++;
+    });
+    rows.push({ name: m.name, est });
+  });
+  return { rows, totals, noData };
 }
 
 function addMemoNames(raw) {
@@ -2920,7 +2989,10 @@ function addMemoNames(raw) {
   String(raw || "").split(/[、,\n]/).map(cleanName).filter(Boolean).forEach(n => {
     const k = matchKey(n);
     const ex = memoItems.find(m => matchKey(m.name) === k);
-    if (ex) { if (ex.checked) { ex.checked = false; added++; } return; }
+    if (ex) {
+      if (ex.checked) { ex.checked = false; delete ex.recorded; delete ex.boughtAt; delete ex.boughtDate; added++; }
+      return;
+    }
     memoItems.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: canonOf("group", n), checked: false, ts: Date.now() });
     added++;
   });
@@ -2928,31 +3000,104 @@ function addMemoNames(raw) {
   return added;
 }
 
-// when something is recorded, tick it off the memo
-function autoCheckMemo(itemName, groupName) {
+// A purchase was recorded: mark the memo item as 記録済み (the one ✎記録 sent over, else a matching one)
+function autoCheckMemo(itemName, groupName, storeName, iso) {
   const keys = [matchKey(groupName || itemName), matchKey(itemName)];
-  let hit = 0;
-  memoItems.forEach(m => { if (!m.checked && keys.includes(matchKey(m.name))) { m.checked = true; hit++; } });
-  if (hit) { saveMemo("買い物メモ(買ったよ)"); renderMemo(); }
+  const nameHit = m => keys.includes(matchKey(m.name));
+  let target = memoItems.find(m => recordingMemoId && String(m.id) === String(recordingMemoId) && nameHit(m));
+  recordingMemoId = null;
+  if (!target) target = memoItems.find(m => m.checked && !m.recorded && nameHit(m));
+  if (!target) target = memoItems.find(m => !m.checked && nameHit(m));
+  if (!target) return;
+  if (!target.checked) { target.checked = true; target.boughtAt = storeName || ""; target.boughtDate = iso || isoToday(); }
+  target.recorded = true;
+  saveMemo("買い物メモ(記録したよ)");
+  renderMemo();
 }
 
 function memoRow(m) {
-  const st = m.checked ? null : memoStats(m.name);
+  const state = !m.checked ? "open" : (m.recorded ? "rec" : "bought");
   let info = "";
-  if (!m.checked) {
+  if (state === "open") {
+    const st = memoStats(m.name);
     if (!st) info = "まだ記録がないよ";
     else {
       info = `👑 ${fmt(st.best.unitPrice)}円 ${escapeHtml(labelOf(st.best))} · ${escapeHtml(currentStoreGroup(st.best))}`;
       if (st.latest.id !== st.best.id) info += ` / 前回 ${fmt(st.latest.unitPrice)}円(${escapeHtml(currentStoreGroup(st.latest))})`;
       if (st.stale) info += " ※古い記録";
     }
+  } else if (state === "bought") {
+    const when = !m.boughtDate || m.boughtDate === isoToday() ? "今日" : mdOfIso(m.boughtDate);
+    info = `${m.boughtAt ? escapeHtml(storeLabel(m.boughtAt)) : "お店は未選択"} · ${when}`;
+  } else {
+    info = "記録したよ";
   }
-  return `<div class="mm-row ${m.checked ? "done" : ""}" data-memo-id="${escapeHtml(String(m.id))}">
+  return `<div class="mm-row ${state === "rec" ? "done" : ""}" data-memo-id="${escapeHtml(String(m.id))}">
     <div class="mm-check ${m.checked ? "on" : ""}" data-memo-check="1">${m.checked ? "✓" : ""}</div>
-    <div style="flex:1; min-width:0;"><div class="mm-name">${escapeHtml(m.name)}</div>${info ? `<div class="mm-info">${info}</div>` : ""}</div>
-    ${m.checked ? "" : `<div class="mm-x" data-memo-rec="1" title="記録する">✎記録</div>`}
+    <div style="flex:1; min-width:0;"><div class="mm-name">${escapeHtml(m.name)}</div><div class="mm-info">${info}</div></div>
+    ${state === "bought" ? `<div class="mm-btn" data-memo-rec="1">✎記録</div>` : ""}
     <div class="mm-x" data-memo-del="1" title="消す">✕</div>
   </div>`;
+}
+
+function renderMemoFav() {
+  const box = document.getElementById("memoFav");
+  const favs = favStores();
+  const today = getTodayStore();
+  const chip = (attr, val, label, on) => `<div class="catbtn ${on ? "active" : ""}" ${attr}="${escapeHtml(val)}" style="flex:0 0 auto; padding:8px 12px;">${escapeHtml(label)}</div>`;
+  let html = `<div class="kk-title">今日行ったお店(買ったものに付くよ)</div>`;
+  if (favs.length) {
+    html += `<div class="catrow" style="flex-wrap:wrap;">${favs.map(s => chip("data-today-store", s, storeLabel(s), s === today)).join("")}</div>`;
+  } else {
+    html += `<div class="hint" style="margin-top:0;">先に「いつものお店」を選んでね</div>`;
+  }
+  const open = favPickerOpen || favs.length === 0;
+  html += `<div style="margin-top:10px; font-size:12.5px; color:var(--accent); font-weight:700; cursor:pointer;" data-fav-toggle="1">${open ? "▼" : "▶"} いつものお店を選ぶ(${favs.length}店)</div>`;
+  if (open) {
+    const names = allStoreNames();
+    html += names.length
+      ? `<div class="catrow" style="flex-wrap:wrap; margin-top:8px;">${names.map(s => chip("data-fav-store", s, (favs.includes(s) ? "★ " : "") + storeLabel(s), favs.includes(s))).join("")}</div>`
+      : `<div class="hint">お店の記録がまだないよ。記録するとここに出るよ</div>`;
+  }
+  box.innerHTML = html;
+}
+
+function renderMemoCompare(open) {
+  const box = document.getElementById("memoCompare");
+  const favs = favStores();
+  if (favs.length < 2 || open.length === 0) { box.style.display = "none"; box.innerHTML = ""; return; }
+  const { rows, totals, noData } = memoCompare(open, favs);
+  box.style.display = "block";
+  if (rows.length === 0) {
+    box.innerHTML = `<div class="kk-title">どこで済ませると安い?</div><div class="hint" style="margin-top:0;">いつものお店で記録のある商品がまだないよ</div>`;
+    return;
+  }
+  const ranked = favs.slice().sort((a, b) => totals[a].sum - totals[b].sum);
+  const best = totals[ranked[0]].sum;
+  let html = `<div class="kk-title">どこで済ませると安い?(いま残ってる${open.length}品)</div>`;
+  html += ranked.map((s, i) => {
+    const t = totals[s];
+    const diff = Math.round(t.sum - best);
+    return `<div class="kk-line" style="padding:7px 0; border-top:${i ? "1px solid var(--line)" : "none"};">
+      <span>${i === 0 ? "👑 " : ""}${escapeHtml(storeLabel(s))}<span style="display:block; font-size:11.5px; color:var(--sub);">記録あり ${t.real}/${t.real + t.fake}品${t.fake ? "(残りは仮置き)" : ""}</span></span>
+      <span style="text-align:right;"><b>約${yen(t.sum)}</b><span style="display:block; font-size:11.5px; color:${diff ? "var(--warn)" : "var(--accent)"};">${diff ? "+" + yen(diff) : "いちばん安い"}</span></span></div>`;
+  }).join("");
+  html += `<div style="margin-top:8px; font-size:12.5px; color:var(--accent); font-weight:700; cursor:pointer;" data-memo-detail="1">${memoDetailOpen ? "▼" : "▶"} 商品ごとに見る</div>`;
+  if (memoDetailOpen) {
+    html += `<div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:12.5px; margin-top:6px;">
+      <tr style="color:var(--sub); font-size:11px;"><th style="text-align:left; padding:3px;">商品</th>${ranked.map(s => `<th style="text-align:right; padding:3px;">${escapeHtml(s)}</th>`).join("")}</tr>
+      ${rows.map(r => {
+        const min = Math.min(...favs.map(s => r.est[s].v));
+        return `<tr><td style="padding:5px 3px; border-top:1px solid var(--line);">${escapeHtml(r.name)}</td>${ranked.map(s => {
+          const c = r.est[s];
+          const isMin = Math.abs(c.v - min) < 0.5;
+          return `<td style="padding:5px 3px; border-top:1px solid var(--line); text-align:right; ${isMin ? "color:var(--accent); font-weight:800;" : ""} ${c.real ? "" : "color:var(--sub);"}">${yen(c.v)}${c.real ? "" : "※"}</td>`;
+        }).join("")}</tr>`;
+      }).join("")}</table></div>`;
+  }
+  if (noData.length) html += `<div class="hint">比べられなかった商品: ${noData.map(escapeHtml).join("、")}(記録がないよ)</div>`;
+  html += `<div class="hint">いつも買う量で、各店の最近の単価から計算した目安だよ。※は記録がなくて、ほかのお店の平均で仮置きした値段。</div>`;
+  box.innerHTML = html;
 }
 
 function renderMemo() {
@@ -2966,9 +3111,13 @@ function renderMemo() {
   if (names.includes(cur)) sel.value = cur;
   document.getElementById("memoListAddBtn").disabled = names.length === 0;
 
-  const body = document.getElementById("memoBody");
   const open = memoItems.filter(m => !m.checked);
-  const done = memoItems.filter(m => m.checked);
+  const bought = memoItems.filter(m => m.checked && !m.recorded);
+  const rec = memoItems.filter(m => m.checked && m.recorded);
+  renderMemoFav();
+  renderMemoCompare(open);
+
+  const body = document.getElementById("memoBody");
   if (memoItems.length === 0) {
     body.innerHTML = `<div class="empty" style="padding:18px 0;">メモは空っぽだよ<br>上から買うものを追加してね</div>`;
     return;
@@ -2977,8 +3126,10 @@ function renderMemo() {
       <div class="catbtn ${memoMode === "list" ? "active" : ""}" data-memo-mode="list">追加した順</div>
       <div class="catbtn ${memoMode === "store" ? "active" : ""}" data-memo-mode="store">🏪 お店ごと(最安)</div>
     </div>`;
-  let html = `<div style="font-size:13px; color:var(--sub); margin-bottom:8px; font-weight:600;">あと${open.length}つ${done.length ? `(買った ${done.length}つ)` : ""}</div>` + toggle;
-  if (memoMode === "store") {
+  let html = `<div style="font-size:13px; color:var(--sub); margin-bottom:8px; font-weight:600;">あと${open.length}つ${bought.length ? `・買った(未記録) ${bought.length}つ` : ""}</div>` + toggle;
+  if (open.length === 0) {
+    html += `<div class="hint" style="margin:10px 0;">買うものは全部かごに入ったよ 🎉</div>`;
+  } else if (memoMode === "store") {
     const groups = {};
     open.forEach(m => {
       const st = memoStats(m.name);
@@ -2991,8 +3142,11 @@ function renderMemo() {
   } else {
     html += open.map(memoRow).join("");
   }
-  if (done.length) {
-    html += `<div class="mm-head" style="display:flex; justify-content:space-between; align-items:center;"><span>買ったもの</span><span class="mm-btn" data-memo-clear="1">買ったものを消す</span></div>` + done.map(memoRow).join("");
+  if (bought.length) {
+    html += `<div class="mm-head">🧾 買った・値段をまだ記録していない(${bought.length})</div>` + bought.map(memoRow).join("");
+  }
+  if (rec.length) {
+    html += `<div class="mm-head" style="display:flex; justify-content:space-between; align-items:center;"><span>記録済み(${rec.length})</span><span class="mm-btn" data-memo-clear="1">記録済みを消す</span></div>` + rec.map(memoRow).join("");
   }
   body.innerHTML = html;
 }
@@ -3014,9 +3168,30 @@ function renderMemo() {
   document.getElementById("view-memo").addEventListener("click", (e) => {
     const modeEl = e.target.closest("[data-memo-mode]");
     if (modeEl) { memoMode = modeEl.dataset.memoMode; renderMemo(); return; }
+    if (e.target.closest("[data-fav-toggle]")) { favPickerOpen = !favPickerOpen; renderMemo(); return; }
+    if (e.target.closest("[data-memo-detail]")) { memoDetailOpen = !memoDetailOpen; renderMemo(); return; }
+    const favEl = e.target.closest("[data-fav-store]");
+    if (favEl) {
+      const s = favEl.dataset.favStore;
+      const list = favStores().slice();
+      const i = list.indexOf(s);
+      if (i === -1) list.push(s); else list.splice(i, 1);
+      appSettings.favStores = list;
+      favPickerOpen = true; // keep the picker open while choosing
+      saveSettings("いつものお店");
+      renderMemo();
+      return;
+    }
+    const todayEl = e.target.closest("[data-today-store]");
+    if (todayEl) {
+      const s = todayEl.dataset.todayStore;
+      setTodayStore(getTodayStore() === s ? "" : s);
+      renderMemo();
+      return;
+    }
     if (e.target.closest("[data-memo-clear]")) {
-      memoItems = memoItems.filter(m => !m.checked);
-      saveMemo("買ったものを消した");
+      memoItems = memoItems.filter(m => !(m.checked && m.recorded));
+      saveMemo("記録済みを消した");
       renderMemo();
       return;
     }
@@ -3024,13 +3199,23 @@ function renderMemo() {
     if (!row) return;
     const m = memoItems.find(x => String(x.id) === row.dataset.memoId);
     if (!m) return;
-    if (e.target.closest("[data-memo-check]")) { m.checked = !m.checked; saveMemo("買い物メモ"); renderMemo(); }
-    else if (e.target.closest("[data-memo-del]")) { memoItems = memoItems.filter(x => x !== m); saveMemo("メモから削除"); renderMemo(); }
-    else if (e.target.closest("[data-memo-rec]")) {
+    if (e.target.closest("[data-memo-check]")) {
+      if (!m.checked) { m.checked = true; delete m.recorded; m.boughtAt = getTodayStore(); m.boughtDate = isoToday(); }
+      else { m.checked = false; delete m.recorded; delete m.boughtAt; delete m.boughtDate; }
+      saveMemo("買い物メモ");
+      renderMemo();
+    } else if (e.target.closest("[data-memo-del]")) {
+      memoItems = memoItems.filter(x => x !== m);
+      saveMemo("メモから削除");
+      renderMemo();
+    } else if (e.target.closest("[data-memo-rec]")) {
+      recordingMemoId = m.id;
       switchView("add");
       const it = document.getElementById("itemName");
       it.value = m.name;
       it.dispatchEvent(new Event("input"));
+      if (m.boughtAt) document.getElementById("storeName").value = m.boughtAt;
+      setBuyDate(m.boughtDate || isoToday(), false);
       window.scrollTo(0, 0);
       document.getElementById("price").focus();
     }
