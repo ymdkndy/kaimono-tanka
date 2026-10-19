@@ -193,6 +193,16 @@
   .badge.mid { background: var(--mid); color: white; }
   .badge.warn { background: var(--warn); color: white; }
   .hint { font-size: 11.5px; color: var(--sub); margin-top: 6px; }
+  .kk-nav { border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 8px 16px; font-size: 15px; color: var(--ink); cursor: pointer; }
+  .kk-nav:disabled { opacity: .35; cursor: default; }
+  .kk-title { font-size: 12.5px; color: var(--sub); font-weight: 600; margin-bottom: 8px; }
+  .kk-row { padding: 9px 0; border-top: 1px solid var(--line); cursor: pointer; }
+  .kk-row:first-of-type { border-top: none; }
+  .kk-line { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
+  .kk-track { height: 7px; border-radius: 4px; background: var(--accent-soft); margin-top: 6px; }
+  .kk-fill { height: 7px; border-radius: 4px; background: var(--accent); }
+  .kk-detail { font-size: 12px; color: var(--sub); padding: 6px 0 2px 4px; }
+  .kk-detail div { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
 
   .tabs {
     position: fixed;
@@ -285,6 +295,7 @@
   <p>入力すると自動で単価を計算・比較するよ</p>
   <button id="settingsBtn" aria-label="設定">⚙️</button>
   <div id="settingsMenu">
+    <div class="settings-item" data-view="kakei">📊 家計簿(月ごとの集計)</div>
     <div class="settings-item" data-view="storeinfo">🏬 店舗情報</div>
     <div class="settings-item" data-view="tidy">🔤 表記ゆれをまとめる</div>
     <div class="settings-item" data-view="backup">💾 バックアップ</div>
@@ -523,6 +534,27 @@
     </div>
     <div id="storeRanking"></div>
     <div id="storeContent"></div>
+  </div>
+  <!-- KAKEI VIEW -->
+  <div class="view" id="view-kakei">
+    <div class="card">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+        <button class="kk-nav" id="kkPrev" aria-label="前の月">◀</button>
+        <div id="kkMonthLabel" style="font-weight:700; font-size:17px;"></div>
+        <button class="kk-nav" id="kkNext" aria-label="次の月">▶</button>
+      </div>
+      <div class="catrow" id="kkDomainRow" style="margin-bottom:10px;">
+        <div class="catbtn active" data-kd="all">すべて</div>
+        <div class="catbtn" data-kd="food">🍚 食品</div>
+        <div class="catbtn" data-kd="daily">🧴 日用品</div>
+      </div>
+      <div id="kkSummary"></div>
+    </div>
+    <div class="card" id="kkTrend"></div>
+    <div class="card" id="kkCats"></div>
+    <div class="card" id="kkStores"></div>
+    <div class="card" id="kkTop"></div>
+    <div class="hint" style="margin:0 4px 16px;">ここの金額は、このアプリに記録した分の合計だよ。レシートの合計とは違うことがあるよ(記録していない買い物は入らないよ)。</div>
   </div>
   <!-- TIDY VIEW -->
   <div class="view" id="view-tidy">
@@ -1709,6 +1741,8 @@ function switchView(view) {
   document.getElementById("view-" + view).classList.add("active");
   document.getElementById("settingsMenu").classList.remove("open");
   if (view === "tidy") renderTidy();
+  document.getElementById("domainSwitch").style.display = view === "kakei" ? "none" : ""; // 家計簿 has its own filter
+  if (view === "kakei") renderKakei();
 }
 
 // ---- Settings menu ----
@@ -2808,7 +2842,122 @@ function renderAll() {
   updateDatalists();
   populateStoreSelect();
   collapseCats();
+  if (document.getElementById("view-kakei").classList.contains("active")) renderKakei();
 }
+
+// ---- 家計簿: monthly totals from the purchase records ----
+let kkMonth = ""; // "YYYY-MM"
+let kkDomain = "all";
+const kkOpen = new Set(); // opened rows: "c:カテゴリ" / "s:お店"
+const yen = n => "¥" + Math.round(n).toLocaleString("ja-JP");
+function monthOf(e) { return isoFromEntry(e).slice(0, 7); }
+function shiftMonth(m, d) {
+  const [y, mo] = m.split("-").map(Number);
+  const dt = new Date(y, mo - 1 + d, 1);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
+}
+function monthName(m) { return `${Number(m.slice(5))}月`; }
+function kkInDomain(e) {
+  const daily = DAILY_CATS.includes(e.category);
+  return kkDomain === "all" || (kkDomain === "daily" ? daily : !daily);
+}
+function kkGroup(list, keyFn) {
+  const g = {};
+  list.forEach(e => {
+    const k = keyFn(e) || "(不明)";
+    if (!g[k]) g[k] = { key: k, sum: 0, n: 0, list: [] };
+    g[k].sum += Number(e.price) || 0;
+    g[k].n++;
+    g[k].list.push(e);
+  });
+  return Object.values(g).sort((a, b) => b.sum - a.sum);
+}
+function kkRows(groups, total, prefix) {
+  if (groups.length === 0) return `<div class="hint">この月の記録はまだないよ</div>`;
+  const max = groups[0].sum || 1;
+  return groups.map(g => {
+    const id = prefix + ":" + g.key;
+    const open = kkOpen.has(id);
+    const detail = open ? `<div class="kk-detail">${g.list.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 20).map(e =>
+      `<div><span>${escapeHtml(e.date || "")} ${escapeHtml(e.itemName)}${prefix === "c" ? " · " + escapeHtml(currentStoreGroup(e)) : ""}</span><span>${yen(Number(e.price) || 0)}</span></div>`).join("")}${g.list.length > 20 ? `<div><span>ほか${g.list.length - 20}件</span><span></span></div>` : ""}</div>` : "";
+    return `<div class="kk-row" data-kk-open="${escapeHtml(id)}">
+      <div class="kk-line"><span>${open ? "▼" : "▶"} ${escapeHtml(g.key)} <span style="color:var(--sub); font-size:12px;">${g.n}件</span></span>
+        <span><b>${yen(g.sum)}</b> <span style="color:var(--sub); font-size:12px;">${total ? Math.round(g.sum / total * 100) : 0}%</span></span></div>
+      <div class="kk-track"><div class="kk-fill" style="width:${Math.max(2, Math.round(g.sum / max * 100))}%;"></div></div>
+      ${detail}
+    </div>`;
+  }).join("");
+}
+
+function renderKakei() {
+  const thisMonth = isoToday().slice(0, 7);
+  if (!kkMonth) kkMonth = thisMonth;
+  document.querySelectorAll("#kkDomainRow .catbtn").forEach(b => b.classList.toggle("active", b.dataset.kd === kkDomain));
+  const list = entries.filter(kkInDomain);
+  const byMonth = {};
+  list.forEach(e => { const m = monthOf(e); byMonth[m] = (byMonth[m] || 0) + (Number(e.price) || 0); });
+  const cur = list.filter(e => monthOf(e) === kkMonth);
+  const total = cur.reduce((a, e) => a + (Number(e.price) || 0), 0);
+  const prevTotal = byMonth[shiftMonth(kkMonth, -1)] || 0;
+
+  document.getElementById("kkMonthLabel").textContent = `${kkMonth.slice(0, 4)}年${monthName(kkMonth)}`;
+  document.getElementById("kkNext").disabled = kkMonth >= thisMonth;
+
+  let cmp = `<span style="color:var(--sub);">前の月の記録はないよ</span>`;
+  if (prevTotal > 0) {
+    const diff = total - prevTotal;
+    const pct = Math.round(Math.abs(diff) / prevTotal * 100);
+    cmp = `<span style="color:${diff > 0 ? "var(--warn)" : "var(--accent)"}; font-weight:700;">前の月より ${diff > 0 ? "+" : "−"}${yen(Math.abs(diff))}(${pct}%${diff > 0 ? "増" : "減"})</span>`;
+  }
+  document.getElementById("kkSummary").innerHTML = cur.length === 0
+    ? `<div class="hint" style="text-align:center; padding:10px 0;">この月の記録はまだないよ</div>`
+    : `<div style="text-align:center;"><div style="font-size:30px; font-weight:800; letter-spacing:.5px;">${yen(total)}</div>
+        <div style="font-size:12.5px; color:var(--sub); margin-top:2px;">${cur.length}件の記録</div>
+        <div style="font-size:13px; margin-top:6px;">${cmp}</div></div>`;
+
+  // last 6 months ending at the chosen month
+  const months = [];
+  for (let i = 5; i >= 0; i--) months.push(shiftMonth(kkMonth, -i));
+  const mmax = Math.max(1, ...months.map(m => byMonth[m] || 0));
+  document.getElementById("kkTrend").innerHTML = `<div class="kk-title">月ごとの合計(タップでその月へ)</div>
+    <div style="display:flex; align-items:flex-end; gap:6px; height:120px;">${months.map(m => {
+      const v = byMonth[m] || 0;
+      const h = v ? Math.max(4, Math.round(v / mmax * 80)) : 2;
+      return `<div data-kk-month="${m}" style="flex:1; text-align:center; cursor:pointer; min-width:0;">
+        <div style="font-size:10px; color:var(--sub); white-space:nowrap; overflow:hidden;">${v ? yen(v) : ""}</div>
+        <div style="height:${h}px; margin:3px 4px 0; border-radius:4px 4px 0 0; background:var(--accent); opacity:${m === kkMonth ? 1 : 0.35};"></div>
+        <div style="font-size:11.5px; margin-top:3px; font-weight:${m === kkMonth ? 700 : 400};">${monthName(m)}</div></div>`;
+    }).join("")}</div>`;
+
+  document.getElementById("kkCats").innerHTML = `<div class="kk-title">カテゴリ別(タップで中身)</div>` + kkRows(kkGroup(cur, e => e.category), total, "c");
+  document.getElementById("kkStores").innerHTML = `<div class="kk-title">お店別(お店グループ)</div>` + kkRows(kkGroup(cur, e => currentStoreGroup(e)), total, "s");
+  const top = kkGroup(cur, e => gOf(e)).slice(0, 5);
+  document.getElementById("kkTop").innerHTML = `<div class="kk-title">金額が大きかった商品 TOP5</div>` + (top.length
+    ? top.map((g, i) => `<div class="kk-line" style="padding:6px 0; border-top:${i ? "1px solid var(--line)" : "none"};"><span>${i + 1}. ${escapeHtml(g.key)} <span style="color:var(--sub); font-size:12px;">${g.n}回</span></span><b>${yen(g.sum)}</b></div>`).join("")
+    : `<div class="hint">この月の記録はまだないよ</div>`);
+}
+
+document.getElementById("kkPrev").addEventListener("click", () => { kkMonth = shiftMonth(kkMonth || isoToday().slice(0, 7), -1); renderKakei(); });
+document.getElementById("kkNext").addEventListener("click", () => {
+  const next = shiftMonth(kkMonth, 1);
+  if (next <= isoToday().slice(0, 7)) { kkMonth = next; renderKakei(); }
+});
+document.getElementById("kkDomainRow").addEventListener("click", (e) => {
+  const b = e.target.closest(".catbtn");
+  if (!b) return;
+  kkDomain = b.dataset.kd;
+  renderKakei();
+});
+document.getElementById("view-kakei").addEventListener("click", (e) => {
+  const mEl = e.target.closest("[data-kk-month]");
+  if (mEl) { kkMonth = mEl.dataset.kkMonth; renderKakei(); return; }
+  const oEl = e.target.closest("[data-kk-open]");
+  if (oEl) {
+    const id = oEl.dataset.kkOpen;
+    if (kkOpen.has(id)) kkOpen.delete(id); else kkOpen.add(id);
+    renderKakei();
+  }
+});
 
 // ---- Backup: export / import ----
 document.getElementById("exportBtn").addEventListener("click", () => {
