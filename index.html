@@ -537,7 +537,7 @@
   <div class="view" id="view-backup">
     <div class="card">
       <label style="display:block; font-size:12.5px; color:var(--sub); margin-bottom:5px; font-weight:600;">データのバックアップ</label>
-      <div class="hint" style="margin-bottom:10px;">再公開すると記録がリセットされることがあるから、変更する前にここでコピーしておいて、新しいリンクで下の「読み込む」から貼り付けてね。価格の記録と店舗情報の両方がまとめて書き出されるよ。</div>
+      <div class="hint" style="margin-bottom:10px;">再公開すると記録がリセットされることがあるから、変更する前にここでコピーしておいて、新しいリンクで下の「読み込む」から貼り付けてね。価格の記録・店舗情報・☆リストがまとめて書き出されるよ。</div>
       <button class="bigbtn" id="exportBtn" style="margin-bottom:10px;">現在のデータを書き出す</button>
       <textarea id="exportArea" readonly style="width:100%; height:110px; border-radius:10px; border:1px solid var(--line); background:#FCFAF7; padding:10px; font-size:11px; font-family:monospace;"></textarea>
     </div>
@@ -659,53 +659,303 @@ let editingId = null;
 const STORAGE_KEY = "grocery-entries-v1";
 const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbzng3lRHp4yrugM3HhN_1tNXvj-AOMJriJdSbBl5iIFwNNnvBezbdeDO0OUger51mn1/exec";
 
-// ---- Storage layer (Google Sheets via GAS) ----
-// Big values are split into chunks (a sheet cell holds ~50,000 chars max), every save is
-// verified by reading it back, and saving is blocked if loading failed (so we never overwrite
-// real data with an empty list).
-const CHUNK_SIZE = 20000;
-
-async function sheetGetRaw(key) {
-  const res = await fetch(`${SHEET_API_URL}?key=${encodeURIComponent(key)}`);
-  if (!res.ok) throw new Error("HTTP " + res.status);
-  const data = await res.json();
-  return data.value;
+// ---- Storage layer v2 (Google Sheets via GAS) ----
+// One row per record (a purchase / a store / a setting) instead of one giant value, so two devices
+// editing at the same time no longer overwrite each other. Access needs a passcode (kept only on
+// this device). Every save is verified by reading it back, and saving is blocked if loading failed.
+const TOKEN_KEY = "grocery-token-v1";
+let memToken = "";
+function getToken() {
+  try { return localStorage.getItem(TOKEN_KEY) || memToken; } catch (e) { return memToken; }
+}
+function setToken(t) {
+  memToken = t;
+  try { localStorage.setItem(TOKEN_KEY, t); } catch (e) { /* storage unavailable: keep in memory only */ }
 }
 
-async function sheetSetRaw(key, value) {
-  await fetch(SHEET_API_URL, {
-    method: "POST",
-    body: JSON.stringify({ key, value })
+class AuthError extends Error {}
+let authBlocked = false; // stop polling while the passcode is wrong (avoids lockout)
+
+function checkApiReply(data) {
+  if (data && data.error === "auth") throw new AuthError("auth");
+  if (data && data.error === "locked") throw new Error("合言葉の間違いが続いたので、10分ほどロックされたよ。少し待ってからやり直してね");
+  if (data && data.error === "setup") throw new Error("GASのスクリプトで、合言葉(PASSCODE)をまだ設定していないみたい");
+  if (data && data.error) throw new Error(String(data.error));
+  return data;
+}
+async function apiGet(params) {
+  const qs = new URLSearchParams(Object.assign({ token: getToken() }, params));
+  const res = await fetch(`${SHEET_API_URL}?${qs.toString()}`);
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return checkApiReply(await res.json());
+}
+async function apiPost(body) {
+  const res = await fetch(SHEET_API_URL, { method: "POST", body: JSON.stringify(Object.assign({ token: getToken() }, body)) });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  let data;
+  try { data = await res.json(); } catch (e) { return { ok: true, unreadable: true }; } // the read-back check decides
+  return checkApiReply(data);
+}
+
+function askPasscode(message) {
+  return new Promise((resolve) => {
+    let ov = document.getElementById("passOverlay");
+    if (!ov) {
+      ov = document.createElement("div");
+      ov.id = "passOverlay";
+      ov.style.cssText = "position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:1000; display:flex; align-items:center; justify-content:center; padding:20px;";
+      document.body.appendChild(ov);
+    }
+    ov.style.display = "flex";
+    ov.innerHTML = `<div style="background:#fff; border-radius:16px; padding:20px; width:100%; max-width:320px; color:#333;">
+      <div style="font-weight:700; margin-bottom:6px;">🔑 合言葉を入れてね</div>
+      <div class="hint" style="margin-bottom:10px;">${escapeHtml(message || "この端末で最初に1回だけ入れればOK")}</div>
+      <input type="password" id="passInput" autocomplete="off" style="width:100%; margin-bottom:10px;">
+      <button class="bigbtn" id="passOk">開く</button>
+    </div>`;
+    const go = () => {
+      const v = document.getElementById("passInput").value;
+      if (!v) return;
+      setToken(v);
+      authBlocked = false;
+      ov.style.display = "none";
+      resolve();
+    };
+    document.getElementById("passOk").addEventListener("click", go);
+    document.getElementById("passInput").addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+    setTimeout(() => { const i = document.getElementById("passInput"); if (i) i.focus(); }, 50);
   });
 }
 
-async function sheetGet(key) {
-  const n = parseInt(await sheetGetRaw(key + "__n"), 10);
+// Old (v1) storage, only read once when moving the data over. Chunked values: key__n, key__0, key__1 ...
+async function legacyGetRaw(key) { return (await apiGet({ op: "legacy", key })).value; }
+async function legacyGet(key) {
+  const n = parseInt(await legacyGetRaw(key + "__n"), 10);
   if (n > 0) {
     const parts = [];
     for (let i = 0; i < n; i++) {
-      const part = await sheetGetRaw(`${key}__${i}`);
+      const part = await legacyGetRaw(`${key}__${i}`);
       if (part === null || part === undefined) throw new Error("chunk missing: " + i);
       parts.push(String(part));
     }
     return parts.join("");
   }
-  return await sheetGetRaw(key); // data saved before chunking existed
+  return await legacyGetRaw(key);
 }
 
-async function sheetSet(key, value, onProgress) {
-  const chunks = [];
-  for (let i = 0; i < value.length; i += CHUNK_SIZE) chunks.push(value.slice(i, i + CHUNK_SIZE));
-  if (chunks.length === 0) chunks.push("");
-  const total = chunks.length * 2 + 2; // writes + count + verify reads
-  let done = 0;
-  const tick = () => { done++; if (onProgress) onProgress(Math.min(99, Math.round(done / total * 100))); };
-  for (let i = 0; i < chunks.length; i++) { await sheetSetRaw(`${key}__${i}`, chunks[i]); tick(); }
-  await sheetSetRaw(key + "__n", String(chunks.length)); // written last: switches readers to the new data
-  tick();
-  const back = await sheetGet(key);
-  if (back !== value) throw new Error("verify failed");
+// ---- Records: what the server has (synced) vs what is in memory ----
+const synced = { entries: new Map(), store: new Map(), settings: new Map() }; // id -> json as last known on the server
+let lastSync = 0; // server cursor: everything up to here has been merged
+
+// memory -> Map(id -> json) for one kind of data
+function recordsOf(kind) {
+  const m = new Map();
+  if (kind === "entries") {
+    entries.forEach(e => m.set(String(e.id), JSON.stringify(e)));
+  } else if (kind === "store") {
+    Object.keys(storeInfoMap).forEach(n => m.set(n, JSON.stringify(storeInfoMap[n])));
+  } else {
+    const lists = appSettings.lists || {};
+    Object.keys(lists).forEach(n => m.set("list:" + n, JSON.stringify(lists[n])));
+    Object.keys(appSettings.mergeCount || {}).forEach(k => m.set("merge:" + k, JSON.stringify(appSettings.mergeCount[k])));
+    m.set("meta:listOrder", JSON.stringify(Object.keys(lists)));
+  }
+  return m;
 }
+
+function orderLists(lists, order) {
+  const out = {};
+  (Array.isArray(order) ? order : []).forEach(n => { if (lists[n]) out[n] = lists[n]; });
+  Object.keys(lists).forEach(n => { if (!(n in out)) out[n] = lists[n]; });
+  return out;
+}
+
+function upsertLocal(kind, id, obj) {
+  if (kind === "entries") {
+    const i = entries.findIndex(e => String(e.id) === id);
+    if (i === -1) entries.push(obj); else entries[i] = obj;
+  } else if (kind === "store") {
+    storeInfoMap[id] = obj;
+  } else if (id.startsWith("list:")) {
+    appSettings.lists[id.slice(5)] = obj;
+  } else if (id.startsWith("merge:")) {
+    appSettings.mergeCount[id.slice(6)] = obj;
+  } else if (id === "meta:listOrder") {
+    appSettings.lists = orderLists(appSettings.lists, obj);
+  }
+}
+function removeLocal(kind, id) {
+  if (kind === "entries") {
+    const i = entries.findIndex(e => String(e.id) === id);
+    if (i !== -1) entries.splice(i, 1);
+  } else if (kind === "store") {
+    delete storeInfoMap[id];
+  } else if (id.startsWith("list:")) {
+    delete appSettings.lists[id.slice(5)];
+  } else if (id.startsWith("merge:")) {
+    delete appSettings.mergeCount[id.slice(6)];
+  }
+}
+
+// Take in changes made elsewhere. Anything changed here but not saved yet wins (it will be saved next).
+function mergeRemote(items) {
+  let changed = false;
+  const cache = {};
+  items.forEach(it => {
+    const kind = it.c;
+    if (!synced[kind]) return;
+    const id = String(it.id);
+    if (!cache[kind]) cache[kind] = recordsOf(kind);
+    const base = synced[kind];
+    const localJson = cache[kind].get(id);
+    const hasLocalChange = localJson !== base.get(id);
+    let norm = "";
+    let obj = null;
+    if (it.del) { base.delete(id); }
+    else { obj = JSON.parse(it.json); norm = JSON.stringify(obj); base.set(id, norm); }
+    if (hasLocalChange) return;
+    if (it.del) {
+      if (localJson !== undefined) { removeLocal(kind, id); changed = true; }
+    } else if (localJson !== norm) {
+      upsertLocal(kind, id, obj);
+      changed = true;
+    }
+  });
+  return changed;
+}
+
+function refreshAfterRemote() {
+  renderAll();
+  renderStoreInfoList();
+  populateStoreSelect();
+  updateStoreGroupDatalist();
+}
+
+// Put the full list from the server into memory (first load)
+function applyAll(data) {
+  entries = []; storeInfoMap = {}; appSettings = { mergeCount: {}, lists: {} };
+  Object.keys(synced).forEach(k => synced[k].clear());
+  const lists = {};
+  let order = null;
+  data.items.forEach(it => {
+    if (it.del || !synced[it.c]) return;
+    const obj = JSON.parse(it.json);
+    synced[it.c].set(String(it.id), JSON.stringify(obj));
+    if (it.c === "entries") entries.push(obj);
+    else if (it.c === "store") storeInfoMap[it.id] = obj;
+    else if (it.id.startsWith("list:")) lists[it.id.slice(5)] = obj;
+    else if (it.id.startsWith("merge:")) appSettings.mergeCount[it.id.slice(6)] = obj;
+    else if (it.id === "meta:listOrder") order = obj;
+  });
+  appSettings.lists = orderLists(lists, order);
+  lastSync = data.now || 0;
+  entriesLoaded = true; storeInfoLoaded = true; settingsLoaded = true;
+}
+
+// First time only: move the old key/value data into records. The old data is left untouched.
+async function migrateLegacy(data) {
+  showStatus("初回だけ、データを新しい保存方式に移しているよ…(元のデータは消さないよ)", false);
+  const eStr = await legacyGet(STORAGE_KEY);
+  const sStr = await legacyGet(STOREINFO_KEY);
+  const cStr = await legacyGet(SETTINGS_KEY);
+  if (eStr === null && data.items.length === 0) {
+    const err = new Error("legacy-missing");
+    err.userMessage = "⚠️ 前のデータが見つからなかったよ。GASのスクリプトやシートの名前(Data)を確認してね。保存は止めてあるよ";
+    throw err;
+  }
+  const have = new Set(data.items.map(it => it.c + "|" + it.id));
+  const items = [];
+  let skipped = 0;
+  const add = (c, id, obj) => { if (!have.has(c + "|" + id)) items.push({ c, id: String(id), json: JSON.stringify(obj) }); };
+  (eStr ? JSON.parse(eStr) : []).forEach(e => {
+    if (e && e.id !== undefined && e.id !== null && e.id !== "") add("entries", e.id, e); else skipped++;
+  });
+  if (skipped > 0) {
+    const err = new Error("entries without id");
+    err.userMessage = `⚠️ 記録${skipped}件にIDがなくて、移せなかったよ。保存は止めてあるので、教えてね`;
+    throw err;
+  }
+  const st = sStr ? JSON.parse(sStr) : {};
+  Object.keys(st).forEach(n => add("store", n, st[n]));
+  const cs = cStr ? JSON.parse(cStr) : {};
+  Object.keys(cs.lists || {}).forEach(n => add("settings", "list:" + n, cs.lists[n]));
+  Object.keys(cs.mergeCount || {}).forEach(k => add("settings", "merge:" + k, cs.mergeCount[k]));
+  if (cs.lists && Object.keys(cs.lists).length) add("settings", "meta:listOrder", Object.keys(cs.lists));
+
+  const BATCH = 200;
+  for (let i = 0; i < items.length; i += BATCH) {
+    await apiPost({ op: "batch", items: items.slice(i, i + BATCH) });
+    showStatus(`データを移しているよ…(${Math.min(i + BATCH, items.length)}/${items.length})`, false);
+  }
+  const fresh = await apiGet({ op: "list", since: "0" });
+  const got = new Set(fresh.items.map(it => it.c + "|" + it.id));
+  const lost = items.filter(it => !got.has(it.c + "|" + it.id)).length;
+  if (lost > 0) {
+    const err = new Error("migration verify failed");
+    err.userMessage = `⚠️ データの引っ越しの確認に失敗したよ(${lost}件)。保存は止めてあるので、もう一度ページを開いてね。元のデータは無事だよ`;
+    throw err;
+  }
+  await apiPost({ op: "markMigrated" });
+  showStatus(`✓ データを新しい保存方式に移したよ(${items.length}件)`, false);
+  fresh.migrated = true;
+  return fresh;
+}
+
+// Write what changed (new / edited / removed records) for one kind of data, then read it back to check
+async function persistKind(job) {
+  const kind = job.kind;
+  const cur = recordsOf(kind), base = synced[kind];
+  const items = [];
+  cur.forEach((json, id) => { if (base.get(id) !== json) items.push({ c: kind, id, json }); });
+  let dels = 0;
+  base.forEach((json, id) => { if (!cur.has(id)) { items.push({ c: kind, id, del: 1 }); dels++; } });
+  if (dels > Math.max(10, base.size * 0.3)) {
+    throw new Error("一度にたくさん消えそうだったので、保存を止めたよ");
+  }
+  if (items.length === 0) return;
+  const BATCH = 100;
+  const steps = Math.ceil(items.length / BATCH) + 1;
+  let done = 0;
+  const tick = () => { done++; job.pct = Math.min(99, Math.round(done / steps * 100)); renderSaveUI(); };
+  const since = lastSync;
+  for (let i = 0; i < items.length; i += BATCH) {
+    await apiPost({ op: "batch", items: items.slice(i, i + BATCH) });
+    tick();
+  }
+  const back = await apiGet({ op: "list", since: String(since) });
+  const got = new Map();
+  back.items.forEach(it => got.set(it.c + "|" + it.id, it));
+  for (const it of items) {
+    if (it.del) continue;
+    if (!got.has(it.c + "|" + it.id)) throw new Error("verify failed");
+  }
+  items.forEach(it => { if (it.del) base.delete(it.id); else base.set(it.id, it.json); });
+  const changed = mergeRemote(back.items); // other devices' changes (ours are no-ops)
+  lastSync = Math.max(lastSync, back.now || 0);
+  if (changed) refreshAfterRemote();
+}
+
+// Look for changes made on another device
+let pulling = false;
+async function pullRemote() {
+  if (pulling || authBlocked || !entriesLoaded || !storeInfoLoaded || !settingsLoaded) return;
+  if (saveJobs.some(j => j.status === "wait" || j.status === "saving")) return;
+  pulling = true;
+  try {
+    const data = await apiGet({ op: "list", since: String(lastSync) });
+    const changed = mergeRemote(data.items);
+    lastSync = Math.max(lastSync, data.now || 0);
+    if (changed) { refreshAfterRemote(); showStatus("別の端末の変更を取り込んだよ", false); }
+  } catch (e) {
+    if (e instanceof AuthError) { authBlocked = true; askPasscode("合言葉が変わったみたい。新しい合言葉を入れてね"); }
+    else console.error("同期エラー:", e);
+  } finally {
+    pulling = false;
+  }
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) pullRemote(); });
+window.addEventListener("focus", () => pullRemote());
+setInterval(() => { if (!document.hidden) pullRemote(); }, 90000);
 
 let statusTimer = null;
 function showStatus(msg, isError) {
@@ -735,22 +985,32 @@ function queueSave(task) {
 let entriesLoaded = false;
 let storeInfoLoaded = false;
 
-async function loadEntries() {
+async function initData() {
   try {
-    const value = await sheetGet(STORAGE_KEY);
-    entries = value ? JSON.parse(value) : [];
-    entriesLoaded = true;
+    if (!getToken()) await askPasscode();
+    let data;
+    for (;;) {
+      try { data = await apiGet({ op: "list", since: "0" }); break; }
+      catch (e) {
+        if (e instanceof AuthError) { await askPasscode("合言葉が違うみたい。もう一度入れてね"); continue; }
+        throw e;
+      }
+    }
+    if (!data.migrated) data = await migrateLegacy(data);
+    applyAll(data);
     recoverPending("entries");
+    recoverPending("store");
+    recoverPending("settings");
     // category renamed: 乳製品 -> チーズ (update older records and save once)
     let renamed = 0;
     entries.forEach(e => { if (e.category === "乳製品") { e.category = "チーズ"; renamed++; } });
     if (renamed > 0) startSave("entries", `カテゴリ名を変更(乳製品→チーズ ${renamed}件)`);
   } catch (e) {
     console.error("読み込みエラー:", e);
-    entries = [];
-    showStatus("⚠️ 記録を読み込めなかったよ。保存は止めてあるので、ページを再読み込みしてね", true);
+    entries = []; storeInfoMap = {}; appSettings = { mergeCount: {}, lists: {} };
+    showStatus(e && e.userMessage ? e.userMessage : "⚠️ 記録を読み込めなかったよ。保存は止めてあるので、ページを再読み込みしてね", true);
   }
-  renderAll();
+  refreshAfterRemote();
 }
 
 // ---- Save jobs: each save shows up in a small "保存中" list with its progress ----
@@ -792,6 +1052,7 @@ function renderSaveUI() {
     return `<div style="margin-bottom:10px;">
       <div style="display:flex; justify-content:space-between; gap:8px;"><span>${escapeHtml(j.label)}</span><span style="color:${color}; white-space:nowrap;">${label[j.status]}${j.status === "saving" ? " " + pct + "%" : ""}</span></div>
       <div style="height:6px; border-radius:3px; background:#eee; margin-top:4px;"><div style="height:6px; border-radius:3px; width:${pct}%; background:${color};"></div></div>
+      ${j.status === "fail" && j.err ? `<div style="margin-top:4px; font-size:11.5px; color:#C0392B; word-break:break-all;">${escapeHtml(j.err)}</div>` : ""}
       ${j.status === "fail" ? `<div style="margin-top:4px;"><span data-retry-job="${j.id}" style="color:#C0392B; font-weight:700; cursor:pointer; text-decoration:underline;">もう一度保存する</span></div>` : ""}
     </div>`;
   }).join("");
@@ -810,9 +1071,8 @@ function runSaveJob(job) {
     job.status = "saving";
     renderSaveUI();
     try {
-      // serialize at run time so queued jobs always save the newest state
-      const ki = kindInfo(job.kind);
-      await sheetSet(ki.key, JSON.stringify(ki.get()), (p) => { job.pct = p; renderSaveUI(); });
+      // computed at run time so queued jobs always save the newest state
+      await persistKind(job);
       job.status = "done";
       clearPendingIfIdle(job.kind);
       renderSaveUI();
@@ -824,6 +1084,8 @@ function runSaveJob(job) {
     } catch (e) {
       console.error("Storage error:", e);
       job.status = "fail";
+      job.err = e && e.message ? e.message : "";
+      if (e instanceof AuthError) { authBlocked = true; askPasscode("合言葉が違うみたい。入れ直してから「もう一度保存する」を押してね"); }
       savePanelOpen = true;
       renderSaveUI();
       return false;
@@ -971,21 +1233,6 @@ let appSettings = { mergeCount: {}, lists: {} }; // lists: name -> [matchKey of 
 let settingsLoaded = false;
 const COUNT_UNITS = ["個", "袋", "パック", "束"];
 
-async function loadSettings() {
-  try {
-    const value = await sheetGet(SETTINGS_KEY);
-    appSettings = value ? JSON.parse(value) : { mergeCount: {}, lists: {} };
-    if (!appSettings.mergeCount) appSettings.mergeCount = {};
-    if (!appSettings.lists) appSettings.lists = {};
-    settingsLoaded = true;
-    recoverPending("settings");
-  } catch (e) {
-    console.error("読み込みエラー:", e);
-    appSettings = { mergeCount: {}, lists: {} };
-    showStatus("⚠️ 設定を読み込めなかったよ。保存は止めてあるので、ページを再読み込みしてね", true);
-  }
-  renderAll();
-}
 function saveSettings(label) { return startSave("settings", label || "設定"); }
 
 // the "comparison unit" of a record: 個/袋/パック/束 collapse into "1つ" when merging is on for that product
@@ -2565,7 +2812,7 @@ function renderAll() {
 
 // ---- Backup: export / import ----
 document.getElementById("exportBtn").addEventListener("click", () => {
-  const backup = { entries, storeInfo: storeInfoMap };
+  const backup = { entries, storeInfo: storeInfoMap, settings: appSettings };
   document.getElementById("exportArea").value = JSON.stringify(backup);
   document.getElementById("exportArea").select();
 });
@@ -2601,8 +2848,14 @@ document.getElementById("importBtn").addEventListener("click", async () => {
     storeInfoMap[name] = incomingStoreInfo[name];
   });
 
+  // settings (☆ lists, merge switches): only add what's missing
+  const inSettings = (!Array.isArray(incoming) && incoming.settings) || {};
+  Object.keys(inSettings.lists || {}).forEach(n => { if (!appSettings.lists[n]) appSettings.lists[n] = inSettings.lists[n]; });
+  Object.keys(inSettings.mergeCount || {}).forEach(k => { if (!(k in appSettings.mergeCount)) appSettings.mergeCount[k] = inSettings.mergeCount[k]; });
+
   await saveEntries();
   await saveStoreInfo();
+  await saveSettings("バックアップから読み込み");
   renderAll();
   renderStoreInfoList();
   populateStoreSelect();
@@ -2618,21 +2871,6 @@ let currentParking = "不明";
 let editingStoreKey = null;
 const STOREINFO_KEY = "grocery-storeinfo-v1";
 
-async function loadStoreInfo() {
-  try {
-    const value = await sheetGet(STOREINFO_KEY);
-    storeInfoMap = value ? JSON.parse(value) : {};
-    storeInfoLoaded = true;
-    recoverPending("store");
-  } catch (e) {
-    console.error("読み込みエラー:", e);
-    storeInfoMap = {};
-    showStatus("⚠️ 店舗情報を読み込めなかったよ。保存は止めてあるので、ページを再読み込みしてね", true);
-  }
-  renderStoreInfoList();
-  populateStoreSelect();
-  updateStoreGroupDatalist();
-}
 
 function saveStoreInfo(label) {
   return startSave("store", label || "店舗情報");
@@ -2829,9 +3067,7 @@ initListControls();
 syncDomainButtons();
 if (currentDomain === "daily") currentCat = "消耗品";
 document.querySelectorAll("#catRow .catbtn").forEach(b => b.classList.toggle("active", b.dataset.cat === currentCat));
-loadEntries();
-loadStoreInfo();
-loadSettings();
+initData();
 </script>
 
 </body>
