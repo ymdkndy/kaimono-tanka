@@ -555,6 +555,11 @@
   </div>
   <!-- MEMO VIEW -->
   <div class="view" id="view-memo">
+    <div class="catrow" id="memoSubRow" style="margin-bottom:12px;">
+      <div class="catbtn active" data-msub="memo">🛒 メモ</div>
+      <div class="catbtn" data-msub="list">☆ リスト</div>
+    </div>
+    <div id="memoPane">
     <div class="card">
       <div style="display:flex; gap:8px;">
         <div class="field" style="flex:1; margin-bottom:0; position:relative;">
@@ -572,6 +577,17 @@
     <div class="card" id="memoFav"></div>
     <div class="card" id="memoCompare" style="display:none;"></div>
     <div class="card" id="memoBody"></div>
+    </div>
+    <div id="listPane" style="display:none;">
+      <div class="card">
+        <div style="display:flex; gap:8px;">
+          <input type="text" id="newListInput" lang="ja" autocomplete="off" placeholder="新しいリスト名(例: サラダ)" style="flex:1; min-width:0;">
+          <button class="bigbtn" id="newListMakeBtn" style="width:auto; padding:0 18px; margin-top:0;">作る</button>
+        </div>
+        <div class="hint">リストは「よく買うもの」のまとまり。買い物メモにまとめて入れられるよ。商品別の☆からも入れられるよ。</div>
+      </div>
+      <div id="listPaneBody"></div>
+    </div>
   </div>
   <!-- KAKEI VIEW -->
   <div class="view" id="view-kakei">
@@ -620,7 +636,8 @@
   </div>
   <!-- STORE INFO VIEW -->
   <div class="view" id="view-storeinfo">
-    <div class="card">
+    <button class="bigbtn" id="siOpenFormBtn" style="margin:0 0 12px;">＋店舗を登録</button>
+    <div class="card" id="siFormCard" style="display:none;">
       <div class="field">
         <label>店舗名</label>
         <input type="text" id="siStoreName" lang="ja" autocomplete="off" placeholder="例: サミット〇〇店">
@@ -679,6 +696,7 @@
       </select>
     </div>
     <div id="storeFixCard"></div>
+    <div id="siBulkBar" style="display:flex; justify-content:flex-end; margin:0 2px 4px;"></div>
     <div id="storeInfoList"></div>
   </div>
 
@@ -1937,86 +1955,11 @@ function renderListChips() {
   box.querySelector("[data-list-manage]").addEventListener("click", openListManager);
 }
 
-// Manage lists: reorder, rename, delete
+// "リスト管理" now lives in 買い物メモ → リスト
 function openListManager() {
-  let ov = document.getElementById("listManagerOverlay");
-  if (!ov) {
-    ov = document.createElement("div");
-    ov.id = "listManagerOverlay";
-    ov.style.cssText = "position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:100; display:flex; align-items:center; justify-content:center; padding:20px;";
-    document.body.appendChild(ov);
-  }
-  ov.style.display = "flex";
-  let renaming = "";
-  const rebuild = (order, renameFrom, renameTo) => {
-    const next = {};
-    order.forEach(n => { next[n === renameFrom ? renameTo : n] = appSettings.lists[n]; });
-    appSettings.lists = next;
-  };
-  const draw = () => {
-    const names = Object.keys(appSettings.lists);
-    const btn = "border:1px solid var(--line); background:#fff; border-radius:8px; padding:6px 9px; font-size:13px; color:#333; cursor:pointer;";
-    ov.innerHTML = `<div style="background:#fff; border-radius:16px; padding:18px; width:100%; max-width:360px; max-height:80vh; overflow:auto; color:#333;">
-      <div style="font-weight:700; margin-bottom:10px;">リスト管理</div>
-      ${names.length ? names.map((n, i) => renaming === n ? `
-        <div style="display:flex; gap:6px; padding:8px 0; border-top:1px solid var(--line);">
-          <input type="text" id="renameInput" lang="ja" value="${escapeHtml(n)}" style="flex:1; min-width:0;">
-          <button data-rename-ok="${escapeHtml(n)}" style="${btn}">保存</button>
-          <button data-rename-cancel="1" style="${btn}">戻る</button>
-        </div>` : `
-        <div style="display:flex; align-items:center; gap:6px; padding:8px 0; border-top:1px solid var(--line);">
-          <div style="flex:1; min-width:0; font-size:15px; word-break:break-all;">☆ ${escapeHtml(n)}<span style="font-size:11px; color:var(--sub);"> ${appSettings.lists[n].length}品</span></div>
-          <button data-up="${escapeHtml(n)}" style="${btn}" ${i === 0 ? 'disabled' : ''}>↑</button>
-          <button data-down="${escapeHtml(n)}" style="${btn}" ${i === names.length - 1 ? 'disabled' : ''}>↓</button>
-          <button data-rename="${escapeHtml(n)}" style="${btn}">名前</button>
-          <button data-del="${escapeHtml(n)}" style="${btn} color:#c0392b;">削除</button>
-        </div>`).join("") : `<div class="hint">リストはまだないよ</div>`}
-      <button class="bigbtn" id="listManagerClose" style="margin-top:14px; background:#eee; color:#333;">閉じる</button>
-    </div>`;
-    const move = (n, d) => {
-      const order = Object.keys(appSettings.lists);
-      const i = order.indexOf(n), j = i + d;
-      if (j < 0 || j >= order.length) return;
-      [order[i], order[j]] = [order[j], order[i]];
-      rebuild(order);
-      saveSettings("リストの並び替え");
-      renderList(); draw();
-    };
-    ov.querySelectorAll("[data-up]").forEach(b => b.addEventListener("click", () => move(b.dataset.up, -1)));
-    ov.querySelectorAll("[data-down]").forEach(b => b.addEventListener("click", () => move(b.dataset.down, 1)));
-    ov.querySelectorAll("[data-rename]").forEach(b => b.addEventListener("click", () => { renaming = b.dataset.rename; draw(); const inp = document.getElementById("renameInput"); if (inp) inp.focus(); }));
-    const cancel = ov.querySelector("[data-rename-cancel]");
-    if (cancel) cancel.addEventListener("click", () => { renaming = ""; draw(); });
-    const ok = ov.querySelector("[data-rename-ok]");
-    if (ok) {
-      const doRename = () => {
-        const from = ok.dataset.renameOk;
-        const to = cleanName(document.getElementById("renameInput").value);
-        if (!to) return;
-        if (to !== from && appSettings.lists[to]) { showConfirm(`「${to}」というリストはもうあるよ。別の名前にしてね`, () => {}); return; }
-        if (to !== from) {
-          rebuild(Object.keys(appSettings.lists), from, to);
-          if (currentList === from) currentList = to;
-          saveSettings(`リスト名変更: ${from} → ${to}`);
-        }
-        renaming = "";
-        renderList(); draw();
-      };
-      ok.addEventListener("click", doRename);
-      document.getElementById("renameInput").addEventListener("keydown", (e) => { if (e.key === "Enter") doRename(); });
-    }
-    ov.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => {
-      const name = b.dataset.del;
-      showConfirm(`リスト「${name}」を削除する?(商品の記録は消えないよ)`, () => {
-        delete appSettings.lists[name];
-        if (currentList === name) currentList = "";
-        saveSettings(`リスト削除: ${name}`);
-        renderList(); draw();
-      });
-    }));
-    document.getElementById("listManagerClose").addEventListener("click", () => { ov.style.display = "none"; });
-  };
-  draw();
+  switchView("memo");
+  setMemoSub("list");
+  window.scrollTo(0, 0);
 }
 
 function openListPicker(groupNm) {
@@ -2371,8 +2314,13 @@ function renderStoreView() {
     return pct > 0 ? `平均より${v}%安い` : `平均より${v}%高い`;
   };
 
+  const rankOpen = lsGet("grocery-rankopen-v1") !== "0";
   const rankingHeader = `
-    <label style="display:block; font-size:12.5px; color:var(--sub); margin-bottom:2px; font-weight:600;">お店の総合ランキング(平均より何%安いか)</label>
+    <div id="rankingHead" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer; ${rankOpen ? 'margin-bottom:2px;' : ''}">
+      <span style="font-size:12.5px; color:var(--sub); font-weight:600;">お店の総合ランキング(平均より何%安いか)</span>
+      <span style="color:var(--sub); font-size:13px;">${rankOpen ? '▲' : '▼'}</span>
+    </div>
+    <div style="${rankOpen ? '' : 'display:none;'}">
     <div class="hint" style="margin-bottom:8px;">2店舗以上で記録がある商品を、各店の記録の平均価格で比べているよ。${MIN_COMPARED}品目以上で比較できたお店が対象。</div>
     <label style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; color:var(--ink); margin-bottom:10px; cursor:pointer;">
       <input type="checkbox" id="excludeDiscountToggle" ${excludeDiscounted ? 'checked' : ''} style="width:17px; height:17px;">
@@ -2397,7 +2345,11 @@ function renderStoreView() {
     ? `<div class="hint" style="margin-top:8px;">データ不足(${MIN_COMPARED}品目未満)で順位なし: ${lowData.map(r => `${escapeHtml(r.store)}(${r.compared}品目)`).join("、")}</div>`
     : "";
 
-  rankingEl.innerHTML = `<div class="card">${rankingHeader}${rankingBody}${lowDataHtml}</div>`;
+  rankingEl.innerHTML = `<div class="card">${rankingHeader}${rankingBody}${lowDataHtml}</div></div>`;
+  document.getElementById("rankingHead").addEventListener("click", () => {
+    lsSet("grocery-rankopen-v1", rankOpen ? "0" : "1");
+    renderStoreView();
+  });
 
   const rankingToggleEl = document.getElementById("rankingToggle");
   if (rankingToggleEl) {
@@ -2443,7 +2395,9 @@ function renderStoreView() {
 
   const storeNames = Object.keys(storeMap).sort((a,b) => a.localeCompare(b, 'ja'));
 
-  container.innerHTML = storeNames.map(store => {
+  const allOpen = storeNames.length > 0 && storeNames.every(n => expandedGroups.has(n));
+  const bulkBar = storeNames.length > 1 ? `<div style="display:flex; justify-content:flex-end; margin:0 2px 8px;"><span id="storeBulkBtn" style="color:var(--accent); font-weight:700; font-size:12.5px; cursor:pointer; text-decoration:underline;">${allOpen ? '全部たたむ' : '全部ひらく'}</span></div>` : "";
+  container.innerHTML = bulkBar + storeNames.map(store => {
     const items = storeMap[store].sort((a,b) => {
       if (a.isBest !== b.isBest) return a.isBest ? -1 : 1;
       return a.groupName.localeCompare(b.groupName, 'ja');
@@ -2473,6 +2427,12 @@ function renderStoreView() {
       else expandedGroups.add(key);
       renderStoreView();
     });
+  });
+  const bulkEl = document.getElementById("storeBulkBtn");
+  if (bulkEl) bulkEl.addEventListener("click", () => {
+    if (allOpen) storeNames.forEach(n => expandedGroups.delete(n));
+    else storeNames.forEach(n => expandedGroups.add(n));
+    renderStoreView();
   });
 
   container.querySelectorAll("[data-entry-id]").forEach(el => {
@@ -3123,6 +3083,8 @@ function renderMemoCompare(open) {
 }
 
 function renderMemo() {
+  if (memoSub === "list") { setMemoSubDom(); renderListPane(); return; }
+  setMemoSubDom();
   // list picker
   const sel = document.getElementById("memoListSel");
   const names = Object.keys(appSettings.lists || {});
@@ -3172,6 +3134,170 @@ function renderMemo() {
   }
   body.innerHTML = html;
 }
+
+
+// ---- メモ / リスト sub-tabs and the list screen ----
+let memoSub = lsGet("grocery-memosub-v1", "memo");
+let listPaneOpen = "";      // which list is expanded
+let listPaneRename = "";    // which list is being renamed
+function setMemoSubDom() {
+  document.querySelectorAll("#memoSubRow .catbtn").forEach(b => b.classList.toggle("active", b.dataset.msub === memoSub));
+  document.getElementById("memoPane").style.display = memoSub === "memo" ? "" : "none";
+  document.getElementById("listPane").style.display = memoSub === "list" ? "" : "none";
+}
+function setMemoSub(sub) {
+  memoSub = sub === "list" ? "list" : "memo";
+  lsSet("grocery-memosub-v1", memoSub);
+  document.querySelectorAll("#memoSubRow .catbtn").forEach(b => b.classList.toggle("active", b.dataset.msub === memoSub));
+  document.getElementById("memoPane").style.display = memoSub === "memo" ? "" : "none";
+  document.getElementById("listPane").style.display = memoSub === "list" ? "" : "none";
+  if (memoSub === "list") renderListPane(); else renderMemo();
+}
+function listItemName(k) { return canon.group[k] || k; }
+function listAfterChange(label) {
+  saveSettings(label);
+  renderList();
+  renderListPane();
+}
+function renderListPane() {
+  const box = document.getElementById("listPaneBody");
+  if (!box) return;
+  const names = Object.keys(appSettings.lists || {});
+  if (listPaneOpen && !appSettings.lists[listPaneOpen]) listPaneOpen = "";
+  if (!names.length) { box.innerHTML = `<div class="empty">まだリストがないよ。<br>上で名前をつけて作ってね</div>`; return; }
+  const sb = "border:1px solid var(--line); background:#fff; border-radius:8px; padding:6px 10px; font-size:13px; color:var(--ink); cursor:pointer;";
+  box.innerHTML = names.map((n, i) => {
+    const open = n === listPaneOpen;
+    const items = appSettings.lists[n];
+    let html = `<div class="card" style="padding-top:12px; padding-bottom:12px;">
+      <div data-lp-open="${escapeHtml(n)}" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer; gap:8px;">
+        <span style="font-weight:700; font-size:15px; word-break:break-all;">☆ ${escapeHtml(n)} <span style="font-size:11.5px; color:var(--sub); font-weight:400;">${items.length}品</span></span>
+        <span style="color:var(--sub); font-size:13px;">${open ? "▲" : "▼"}</span>
+      </div>`;
+    if (open) {
+      html += `<div style="margin-top:10px;">`;
+      html += items.length ? items.map(k => `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-top:1px solid var(--line); font-size:14px;"><span style="word-break:break-all;">${escapeHtml(listItemName(k))}</span><span class="delete-x" data-lp-rm="${escapeHtml(k)}">×</span></div>`).join("")
+        : `<div class="hint">まだ商品が入ってないよ</div>`;
+      html += `<div style="display:flex; gap:8px; margin-top:10px; border-top:1px solid var(--line); padding-top:10px;">
+          <div class="field" style="flex:1; margin-bottom:0; position:relative;">
+            <input type="text" id="lpAddInput" lang="ja" autocomplete="off" placeholder="商品を追加(名前で探す)">
+            <div id="lpAddSuggest" class="suggest-dropdown"></div>
+          </div>
+          <button class="mm-btn" data-lp-add="1">追加</button>
+        </div>`;
+      if (listPaneRename === n) {
+        html += `<div style="display:flex; gap:6px; margin-top:10px;"><input type="text" id="lpRenameInput" lang="ja" value="${escapeHtml(n)}" style="flex:1; min-width:0;"><button style="${sb}" data-lp-rename-ok="1">保存</button><button style="${sb}" data-lp-rename-cancel="1">戻る</button></div>`;
+      }
+      html += `<button class="bigbtn" data-lp-tomemo="1" style="margin-top:12px;" ${items.length ? "" : "disabled"}>🛒 買い物メモに追加</button>
+        <div style="display:flex; gap:6px; margin-top:10px; flex-wrap:wrap;">
+          <button style="${sb}" data-lp-up="1" ${i === 0 ? "disabled" : ""}>↑ 上へ</button>
+          <button style="${sb}" data-lp-down="1" ${i === names.length - 1 ? "disabled" : ""}>↓ 下へ</button>
+          <button style="${sb}" data-lp-rename="1">名前を変える</button>
+          <button style="${sb} color:var(--warn);" data-lp-del="1">削除</button>
+        </div></div>`;
+    }
+    return html + `</div>`;
+  }).join("");
+  if (listPaneOpen) {
+    const inp = document.getElementById("lpAddInput");
+    if (inp) {
+      setupAutocomplete("lpAddInput", "lpAddSuggest", () => [...new Set(entries.map(gOf))]);
+      document.getElementById("lpAddSuggest").addEventListener("click", (e) => { if (e.target.closest(".suggest-item")) lpAddItem(); });
+      inp.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); lpAddItem(); } });
+    }
+    const rin = document.getElementById("lpRenameInput");
+    if (rin) { rin.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) lpDoRename(); }); }
+  }
+}
+function lpAddItem() {
+  const inp = document.getElementById("lpAddInput");
+  if (!inp || !listPaneOpen) return;
+  const added = [];
+  inp.value.split(/[、,，\n]/).map(cleanName).filter(Boolean).forEach(nm => {
+    const k = matchKey(nm);
+    if (k && !appSettings.lists[listPaneOpen].includes(k)) { appSettings.lists[listPaneOpen].push(k); added.push(nm); }
+  });
+  inp.value = "";
+  if (added.length) listAfterChange(`リスト: ${listPaneOpen}`);
+  else showStatus("もう入ってるよ", false);
+}
+function lpDoRename() {
+  const from = listPaneOpen;
+  const to = cleanName(document.getElementById("lpRenameInput").value);
+  if (!to) return;
+  if (to === from) { listPaneRename = ""; renderListPane(); return; }
+  if (appSettings.lists[to]) { showConfirm(`「${to}」というリストはもうあるよ。別の名前にしてね`, () => {}); return; }
+  const next = {};
+  Object.keys(appSettings.lists).forEach(n => { next[n === from ? to : n] = appSettings.lists[n]; });
+  appSettings.lists = next;
+  if (currentList === from) currentList = to;
+  listPaneOpen = to; listPaneRename = "";
+  listAfterChange(`リスト名変更: ${from} → ${to}`);
+}
+function lpMove(d) {
+  const order = Object.keys(appSettings.lists);
+  const i = order.indexOf(listPaneOpen), j = i + d;
+  if (i < 0 || j < 0 || j >= order.length) return;
+  [order[i], order[j]] = [order[j], order[i]];
+  const next = {};
+  order.forEach(n => { next[n] = appSettings.lists[n]; });
+  appSettings.lists = next;
+  listAfterChange("リストの並び替え");
+}
+(function initListPane() {
+  document.getElementById("memoSubRow").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-msub]");
+    if (b) setMemoSub(b.dataset.msub);
+  });
+  const make = () => {
+    const inp = document.getElementById("newListInput");
+    const name = cleanName(inp.value);
+    if (!name) return;
+    if (appSettings.lists[name]) { showStatus("そのリストはもうあるよ", true); listPaneOpen = name; renderListPane(); return; }
+    appSettings.lists[name] = [];
+    inp.value = "";
+    listPaneOpen = name;
+    listAfterChange(`リスト作成: ${name}`);
+  };
+  document.getElementById("newListMakeBtn").addEventListener("click", make);
+  document.getElementById("newListInput").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); make(); } });
+  document.getElementById("listPaneBody").addEventListener("click", (e) => {
+    const t = e.target;
+    const op = t.closest("[data-lp-open]");
+    if (op && !t.closest("input,button")) {
+      const n = op.dataset.lpOpen;
+      listPaneOpen = listPaneOpen === n ? "" : n;
+      listPaneRename = "";
+      renderListPane();
+      return;
+    }
+    if (!listPaneOpen) return;
+    const L = appSettings.lists[listPaneOpen];
+    const rm = t.closest("[data-lp-rm]");
+    if (rm) { const k = rm.dataset.lpRm; const i = L.indexOf(k); if (i > -1) L.splice(i, 1); listAfterChange(`リスト: ${listPaneOpen}`); return; }
+    if (t.closest("[data-lp-add]")) { lpAddItem(); return; }
+    if (t.closest("[data-lp-up]")) { lpMove(-1); return; }
+    if (t.closest("[data-lp-down]")) { lpMove(1); return; }
+    if (t.closest("[data-lp-rename]")) { listPaneRename = listPaneOpen; renderListPane(); const r = document.getElementById("lpRenameInput"); if (r) r.focus(); return; }
+    if (t.closest("[data-lp-rename-cancel]")) { listPaneRename = ""; renderListPane(); return; }
+    if (t.closest("[data-lp-rename-ok]")) { lpDoRename(); return; }
+    if (t.closest("[data-lp-del]")) {
+      const name = listPaneOpen;
+      showConfirm(`リスト「${name}」を削除する?(商品の記録は消えないよ)`, () => {
+        delete appSettings.lists[name];
+        if (currentList === name) currentList = "";
+        listPaneOpen = "";
+        listAfterChange(`リスト削除: ${name}`);
+      });
+      return;
+    }
+    if (t.closest("[data-lp-tomemo]")) {
+      const added = addMemoNames(L.map(listItemName).join("、"));
+      showStatus(added ? `「${listPaneOpen}」から${added}つ、買い物メモに追加したよ` : "全部もうメモに入ってるよ", false);
+      return;
+    }
+  });
+})();
 
 (function initMemoUI() {
   const input = document.getElementById("memoInput");
@@ -3433,8 +3559,23 @@ document.getElementById("siParkingRow").addEventListener("click", (e) => {
   btn.classList.add("active");
 });
 
+function setSiFormQuiet() {
+  document.getElementById("siFormCard").style.display = "none";
+  document.getElementById("siOpenFormBtn").style.display = "block";
+}
+function setSiForm(open) {
+  document.getElementById("siFormCard").style.display = open ? "block" : "none";
+  document.getElementById("siOpenFormBtn").style.display = open ? "none" : "block";
+  if (open) document.getElementById("siFormCard").scrollIntoView({ block: "start", behavior: "smooth" });
+}
+document.getElementById("siOpenFormBtn").addEventListener("click", () => {
+  resetStoreInfoForm();
+  setSiForm(true);
+  document.getElementById("siStoreName").focus();
+});
 function resetStoreInfoForm() {
   editingStoreKey = null;
+  setSiFormQuiet();
   document.getElementById("siStoreName").value = "";
   document.getElementById("siStoreGroup").value = "";
   document.getElementById("siParentGroup").value = "";
@@ -3510,10 +3651,11 @@ function renderStoreFix() {
   entries.forEach(e => { if (e.storeName && !(e.storeName in storeInfoMap)) cnt[e.storeName] = (cnt[e.storeName] || 0) + 1; });
   const orphans = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a] || a.localeCompare(b, "ja"));
   if (!orphans.length || !reg.length) { box.innerHTML = ""; return; }
+  const fixOpen = lsGet("grocery-fixopen-v1") === "1";
   box.innerHTML = `<div class="card">
-    <div class="kk-title">登録にないお店の名前(${orphans.length}種類)</div>
-    <div class="hint" style="margin:0 0 8px;">古い名前のままの記録だよ。登録したお店に置き換えると、お店比較や買い物メモでも一緒に数えられるよ。</div>
-    ${orphans.map(o => `<div style="padding:9px 0; border-top:1px solid var(--line);">
+    <div class="kk-title" data-fix-head style="cursor:pointer; display:flex; justify-content:space-between; margin-bottom:0;"><span>登録にないお店の名前(${orphans.length}種類)</span><span style="color:var(--sub); font-size:13px; font-weight:400;">${fixOpen ? '▲' : '▼'}</span></div>
+    ${!fixOpen ? "" : `<div class="hint" style="margin:8px 0 8px;">古い名前のままの記録だよ。登録したお店に置き換えると、お店比較や買い物メモでも一緒に数えられるよ。</div>`}
+    ${!fixOpen ? "" : orphans.map(o => `<div style="padding:9px 0; border-top:1px solid var(--line);">
       <div style="font-size:14px; margin-bottom:6px;">${escapeHtml(o)} <span style="color:var(--sub); font-size:12px;">${cnt[o]}件</span></div>
       <div style="display:flex; gap:8px;">
         <select data-fix-sel="${escapeHtml(o)}" style="flex:1; min-width:0;"><option value="">置き換えるお店を選ぶ</option>${reg.map(r => `<option value="${escapeHtml(r)}">${escapeHtml(storeLabel(r))}</option>`).join("")}</select>
@@ -3522,6 +3664,11 @@ function renderStoreFix() {
   </div>`;
 }
 document.getElementById("storeFixCard").addEventListener("click", (ev) => {
+  if (ev.target.closest("[data-fix-head]")) {
+    lsSet("grocery-fixopen-v1", lsGet("grocery-fixopen-v1") === "1" ? "0" : "1");
+    renderStoreFix();
+    return;
+  }
   const go = ev.target.closest("[data-fix-go]");
   if (!go) return;
   const oldName = go.dataset.fixGo;
@@ -3561,6 +3708,7 @@ function startEditStoreInfo(storeName) {
   document.querySelectorAll("#siParkingRow .catbtn").forEach(b => b.classList.toggle("active", b.dataset.parking === currentParking));
   document.getElementById("siSaveBtn").textContent = "この内容で更新する";
   document.getElementById("siCancelBtn").style.display = "block";
+  setSiForm(true);
 }
 
 function renderStoreInfoList() {
@@ -3568,7 +3716,8 @@ function renderStoreInfoList() {
   const container = document.getElementById("storeInfoList");
   const names = Object.keys(storeInfoMap);
   if (names.length === 0) {
-    container.innerHTML = `<div class="empty">まだ店舗情報が登録されてないよ。<br>上のフォームから追加してね</div>`;
+    document.getElementById("siBulkBar").innerHTML = "";
+    container.innerHTML = `<div class="empty">まだ店舗情報が登録されてないよ。<br>上の「＋店舗を登録」から追加してね</div>`;
     return;
   }
 
@@ -3597,13 +3746,31 @@ function renderStoreInfoList() {
   if (parentNames.length && noParent.length) orderedGroups.push({ parent: "系列なし", header: true });
   noParent.forEach(g => orderedGroups.push({ g }));
 
+  const openSet = new Set((() => { try { return JSON.parse(lsGet("grocery-siopen-v1", "[]")); } catch (e) { return []; } })());
+  const allKeys = [];
+  let curParent = null;
+  orderedGroups.forEach(item => {
+    if (item.header) { curParent = item.parent; allKeys.push("p:" + item.parent); }
+    else { item.pk = curParent; allKeys.push("g:" + item.g); }
+  });
+  const everyOpen = allKeys.length > 0 && allKeys.every(k => openSet.has(k));
+  document.getElementById("siBulkBar").innerHTML = `<span data-si-bulk style="color:var(--accent); font-weight:700; font-size:12.5px; cursor:pointer; text-decoration:underline;">${everyOpen ? '全部たたむ' : '全部ひらく'}</span>`;
+  const saveOpen = () => lsSet("grocery-siopen-v1", JSON.stringify([...openSet]));
+  document.querySelector("[data-si-bulk]").onclick = () => {
+    if (everyOpen) openSet.clear(); else allKeys.forEach(k => openSet.add(k));
+    saveOpen(); renderStoreInfoList();
+  };
   container.innerHTML = orderedGroups.map(item => {
     if (item.header) {
-      return `<div style="font-weight:700; font-size:14px; margin:16px 2px 6px; color:var(--ink);">🏢 ${escapeHtml(item.parent)}</div>`;
+      const n = orderedGroups.filter(x => !x.header && x.pk === item.parent).reduce((a, x) => a + groups[x.g].length, 0);
+      const o = openSet.has("p:" + item.parent);
+      return `<div data-si-toggle="p:${escapeHtml(item.parent)}" style="font-weight:700; font-size:14px; margin:16px 2px 6px; color:var(--ink); cursor:pointer; display:flex; justify-content:space-between;"><span>🏢 ${escapeHtml(item.parent)} <span style="font-size:11px;color:var(--sub);font-weight:400;">(${n}店舗)</span></span><span style="color:var(--sub); font-size:13px; font-weight:400;">${o ? '▲' : '▼'}</span></div>`;
     }
+    if (item.pk && !openSet.has("p:" + item.pk)) return "";
     const gName = item.g;
+    const gOpen = openSet.has("g:" + gName);
     const storeNames = sortStoreItems(groups[gName].map(n => ({ label: n, names: [n] }))).map(x => x.label);
-    const rows = storeNames.map(name => {
+    const rows = !gOpen ? "" : storeNames.map(name => {
       const info = storeInfoMap[name];
       const lines = [];
       if (info.address) {
@@ -3625,11 +3792,18 @@ function renderStoreInfoList() {
       </div>`;
     }).join("");
     return `<div class="item-group">
-      <h3>${escapeHtml(gName)} <span style="font-size:11px;color:var(--sub);font-weight:400;">(${storeNames.length}店舗)</span></h3>
+      <h3 data-si-toggle="g:${escapeHtml(gName)}" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center;"><span>${escapeHtml(gName)} <span style="font-size:11px;color:var(--sub);font-weight:400;">(${storeNames.length}店舗)</span></span><span style="color:var(--sub); font-size:13px; font-weight:400;">${gOpen ? '▲' : '▼'}</span></h3>
       ${rows}
     </div>`;
   }).join("");
 
+  container.querySelectorAll("[data-si-toggle]").forEach(el => {
+    el.addEventListener("click", () => {
+      const k = el.dataset.siToggle;
+      if (openSet.has(k)) openSet.delete(k); else openSet.add(k);
+      saveOpen(); renderStoreInfoList();
+    });
+  });
   container.querySelectorAll("[data-store-del]").forEach(el => {
     el.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -3670,6 +3844,7 @@ function copyStoreInfo(name) {
   document.querySelectorAll("#siParkingRow .catbtn").forEach(b => b.classList.toggle("active", b.dataset.parking === currentParking));
   document.getElementById("siSaveBtn").textContent = "この店舗情報を保存";
   document.getElementById("siCancelBtn").style.display = "none";
+  setSiForm(true);
   document.getElementById("siStoreName").focus();
 }
 
