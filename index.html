@@ -678,6 +678,7 @@
         <option value="registered">登録した順</option>
       </select>
     </div>
+    <div id="storeFixCard"></div>
     <div id="storeInfoList"></div>
   </div>
 
@@ -2916,6 +2917,8 @@ function renderAll() {
 // receipt, tap ✎記録 on it (name / shop / date are filled in) -> after saving it becomes "記録済み".
 let memoMode = "list";        // "list" = in the order added, "store" = grouped by the cheapest shop
 let favPickerOpen = false;    // the "いつものお店を選ぶ" picker
+let favShowAll = false;       // picker: show every registered shop, not just the most used ones
+const FAV_SHOWN = 10;
 let memoDetailOpen = false;   // per-item table in the "どこで済ませる?" card
 let recordingMemoId = null;   // memo item that ✎記録 sent to the record screen
 const MEMO_FRESH_DAYS = 90;   // prices older than this are only used when nothing newer exists
@@ -2927,12 +2930,14 @@ function storeLabel(name) {
   const g = info && info.storeGroup && info.storeGroup.trim();
   return g && g !== name ? `${g} ${name}` : name;
 }
+// Shops that can be picked: the ones registered in 店舗情報 (the same set the record screen offers),
+// plus any already-picked favourite that is no longer registered (so it can still be un-picked).
 function allStoreNames() {
   const cnt = {};
   entries.forEach(e => { if (e.storeName) cnt[e.storeName] = (cnt[e.storeName] || 0) + 1; });
-  Object.keys(storeInfoMap).forEach(n => { if (!(n in cnt)) cnt[n] = 0; });
-  favStores().forEach(n => { if (!(n in cnt)) cnt[n] = 0; });
-  return Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a] || a.localeCompare(b, "ja"));
+  const names = new Set(Object.keys(storeInfoMap));
+  favStores().forEach(n => names.add(n));
+  return [...names].sort((a, b) => (cnt[b] || 0) - (cnt[a] || 0) || a.localeCompare(b, "ja"));
 }
 
 // the shop being visited today (this device only; forgotten the next day)
@@ -3061,10 +3066,17 @@ function renderMemoFav() {
   const open = favPickerOpen || favs.length === 0;
   html += `<div style="margin-top:10px; font-size:12.5px; color:var(--accent); font-weight:700; cursor:pointer;" data-fav-toggle="1">${open ? "▼" : "▶"} いつものお店を選ぶ(${favs.length}店)</div>`;
   if (open) {
-    const names = allStoreNames();
-    html += names.length
-      ? `<div class="catrow" style="flex-wrap:wrap; margin-top:8px;">${names.map(s => chip("data-fav-store", s, (favs.includes(s) ? "★ " : "") + storeLabel(s), favs.includes(s))).join("")}</div>`
-      : `<div class="hint">お店の記録がまだないよ。記録するとここに出るよ</div>`;
+    const all = allStoreNames();
+    // picked ones first, then the most used; the rest behind a button
+    const rest = all.filter(n => !favs.includes(n));
+    const shown = favShowAll ? all.filter(n => favs.includes(n)).concat(rest) : favs.filter(n => all.includes(n)).concat(rest.slice(0, Math.max(0, FAV_SHOWN - favs.length)));
+    const hidden = all.length - shown.length;
+    const label = s => (favs.includes(s) ? "★ " : "") + storeLabel(s) + (storeInfoMap[s] ? "" : "(未登録)");
+    html += all.length
+      ? `<div class="catrow" style="flex-wrap:wrap; margin-top:8px;">${shown.map(s => chip("data-fav-store", s, label(s), favs.includes(s))).join("")}</div>`
+        + (hidden > 0 ? `<div class="hint" style="cursor:pointer; color:var(--accent); font-weight:700;" data-fav-all="1">▶ ほかのお店も見る(あと${hidden}店)</div>` : (favShowAll && all.length > FAV_SHOWN ? `<div class="hint" style="cursor:pointer; color:var(--accent); font-weight:700;" data-fav-all="1">▲ 少なくする</div>` : ""))
+        + `<div class="hint">ここに出るのは、店舗情報に登録したお店だよ。出てこないお店は、店舗情報から登録してね。</div>`
+      : `<div class="hint">店舗情報に登録したお店がここに出るよ。先に店舗情報から登録してね。</div>`;
   }
   box.innerHTML = html;
 }
@@ -3091,14 +3103,17 @@ function renderMemoCompare(open) {
   }).join("");
   html += `<div style="margin-top:8px; font-size:12.5px; color:var(--accent); font-weight:700; cursor:pointer;" data-memo-detail="1">${memoDetailOpen ? "▼" : "▶"} 商品ごとに見る</div>`;
   if (memoDetailOpen) {
-    html += `<div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:12.5px; margin-top:6px;">
-      <tr style="color:var(--sub); font-size:11px;"><th style="text-align:left; padding:3px;">商品</th>${ranked.map(s => `<th style="text-align:right; padding:3px;">${escapeHtml(s)}</th>`).join("")}</tr>
+    html += `<div style="overflow-x:auto;"><table style="width:100%; table-layout:fixed; border-collapse:collapse; font-size:13px; margin-top:6px;">
+      <colgroup><col style="width:${Math.max(26, 100 - ranked.length * 22)}%">${ranked.map(() => `<col>`).join("")}</colgroup>
+      <tr style="color:var(--sub); font-size:11.5px;"><th style="text-align:left; padding:4px 3px; font-weight:500;">商品</th>${ranked.map(s => `<th style="text-align:right; padding:4px 3px; font-weight:500; word-break:break-all;">${escapeHtml(s)}</th>`).join("")}</tr>
       ${rows.map(r => {
-        const min = Math.min(...favs.map(s => r.est[s].v));
-        return `<tr><td style="padding:5px 3px; border-top:1px solid var(--line);">${escapeHtml(r.name)}</td>${ranked.map(s => {
+        const vals = favs.map(s => r.est[s].v);
+        const min = Math.min(...vals), max = Math.max(...vals);
+        const differs = max - min >= 0.5; // no highlight when every shop costs the same
+        return `<tr><td style="padding:6px 3px; border-top:1px solid var(--line); word-break:break-all;">${escapeHtml(r.name)}</td>${ranked.map(s => {
           const c = r.est[s];
-          const isMin = Math.abs(c.v - min) < 0.5;
-          return `<td style="padding:5px 3px; border-top:1px solid var(--line); text-align:right; ${isMin ? "color:var(--accent); font-weight:700;" : ""} ${c.real ? "" : "color:var(--sub);"}">${yen(c.v)}${c.real ? "" : "※"}</td>`;
+          const isMin = differs && c.real && Math.abs(c.v - min) < 0.5;
+          return `<td style="padding:6px 3px; border-top:1px solid var(--line); text-align:right; font-weight:${isMin ? 700 : 400}; color:${isMin ? "var(--accent)" : (c.real ? "var(--ink)" : "var(--sub)")};">${yen(c.v)}${c.real ? "" : "※"}</td>`;
         }).join("")}</tr>`;
       }).join("")}</table></div>`;
   }
@@ -3176,6 +3191,7 @@ function renderMemo() {
     const modeEl = e.target.closest("[data-memo-mode]");
     if (modeEl) { memoMode = modeEl.dataset.memoMode; renderMemo(); return; }
     if (e.target.closest("[data-fav-toggle]")) { favPickerOpen = !favPickerOpen; renderMemo(); return; }
+    if (e.target.closest("[data-fav-all]")) { favShowAll = !favShowAll; renderMemo(); return; }
     if (e.target.closest("[data-memo-detail]")) { memoDetailOpen = !memoDetailOpen; renderMemo(); return; }
     const favEl = e.target.closest("[data-fav-store]");
     if (favEl) {
@@ -3442,15 +3458,83 @@ document.getElementById("siSaveBtn").addEventListener("click", async () => {
   const close = document.getElementById("siCloseTime").value;
   const memo = document.getElementById("siMemo").value.trim();
 
-  if (editingStoreKey && editingStoreKey !== storeName) {
-    delete storeInfoMap[editingStoreKey];
+  const oldKey = editingStoreKey;
+  const renaming = !!oldKey && oldKey !== storeName;
+  const apply = async () => {
+    let note = "";
+    if (renaming) delete storeInfoMap[oldKey];
+    storeInfoMap[storeName] = { storeGroup, parentGroup, address, hours: { open, close }, parking: currentParking, memo };
+    if (renaming) {
+      // the shop was renamed: past records / memo / favourites follow
+      const r = renameStoreEverywhere(oldKey, storeName);
+      note = r.entries ? `お店の名前を変えたよ(記録${r.entries}件も「${storeName}」になったよ)` : "お店の名前を変えたよ";
+    }
+    await saveStoreInfo();
+    resetStoreInfoForm();
+    renderAll();
+    renderStoreInfoList();
+    updateStoreGroupDatalist();
+    if (note) showStatus(note, false);
+  };
+  if (renaming && storeInfoMap[storeName]) {
+    showConfirm(`「${storeName}」はもう登録されているよ。「${oldKey}」をこっちにまとめる?(「${oldKey}」の記録も「${storeName}」になって、登録内容は今入力した内容に置き換わるよ)`, apply);
+  } else {
+    apply();
   }
-  storeInfoMap[storeName] = { storeGroup, parentGroup, address, hours: { open, close }, parking: currentParking, memo };
-  await saveStoreInfo();
-  resetStoreInfoForm();
-  renderStoreInfoList();
-  populateStoreSelect();
-  updateStoreGroupDatalist();
+});
+
+// Rename a shop everywhere it is used: purchase records, 買い物メモ, いつものお店, today's shop
+function renameStoreEverywhere(oldName, newName) {
+  const r = { entries: 0, memo: 0, fav: false };
+  entries.forEach(e => { if (e.storeName === oldName) { e.storeName = newName; r.entries++; } });
+  memoItems.forEach(x => { if (x.boughtAt === oldName) { x.boughtAt = newName; r.memo++; } });
+  const favs = favStores();
+  if (favs.includes(oldName)) { appSettings.favStores = [...new Set(favs.map(f => f === oldName ? newName : f))]; r.fav = true; }
+  try {
+    const o = JSON.parse(lsGet("grocery-todaystore-v1", "null"));
+    if (o && o.store === oldName) lsSet("grocery-todaystore-v1", JSON.stringify({ store: newName, date: o.date }));
+  } catch (e) { /* ignore */ }
+  const sn = document.getElementById("storeName");
+  if (sn && sn.value === oldName) sn.value = newName;
+  if (r.entries) saveEntries(`お店の名前を変更(${oldName}→${newName} ${r.entries}件)`);
+  if (r.memo) saveMemo("お店の名前を変更");
+  if (r.fav) saveSettings("いつものお店の名前を変更");
+  return r;
+}
+
+// Old shop names in the records that are not registered (any more): offer to point them at a registered shop
+function renderStoreFix() {
+  const box = document.getElementById("storeFixCard");
+  const reg = allStoreNames().filter(n => n in storeInfoMap);
+  const cnt = {};
+  entries.forEach(e => { if (e.storeName && !(e.storeName in storeInfoMap)) cnt[e.storeName] = (cnt[e.storeName] || 0) + 1; });
+  const orphans = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a] || a.localeCompare(b, "ja"));
+  if (!orphans.length || !reg.length) { box.innerHTML = ""; return; }
+  box.innerHTML = `<div class="card">
+    <div class="kk-title">登録にないお店の名前(${orphans.length}種類)</div>
+    <div class="hint" style="margin:0 0 8px;">古い名前のままの記録だよ。登録したお店に置き換えると、お店比較や買い物メモでも一緒に数えられるよ。</div>
+    ${orphans.map(o => `<div style="padding:9px 0; border-top:1px solid var(--line);">
+      <div style="font-size:14px; margin-bottom:6px;">${escapeHtml(o)} <span style="color:var(--sub); font-size:12px;">${cnt[o]}件</span></div>
+      <div style="display:flex; gap:8px;">
+        <select data-fix-sel="${escapeHtml(o)}" style="flex:1; min-width:0;"><option value="">置き換えるお店を選ぶ</option>${reg.map(r => `<option value="${escapeHtml(r)}">${escapeHtml(storeLabel(r))}</option>`).join("")}</select>
+        <button class="mm-btn" data-fix-go="${escapeHtml(o)}">置き換える</button>
+      </div></div>`).join("")}
+  </div>`;
+}
+document.getElementById("storeFixCard").addEventListener("click", (ev) => {
+  const go = ev.target.closest("[data-fix-go]");
+  if (!go) return;
+  const oldName = go.dataset.fixGo;
+  const sel = [...document.querySelectorAll("#storeFixCard select[data-fix-sel]")].find(x => x.dataset.fixSel === oldName);
+  const target = sel && sel.value;
+  if (!target) { showStatus("置き換えるお店を選んでね", true); return; }
+  const n = entries.filter(e => e.storeName === oldName).length;
+  showConfirm(`「${oldName}」の記録${n}件を、「${storeLabel(target)}」に置き換える?`, () => {
+    renameStoreEverywhere(oldName, target);
+    renderAll();
+    renderStoreInfoList();
+    showStatus(`置き換えたよ ✓(${n}件)`, false);
+  });
 });
 
 document.getElementById("siCancelBtn").addEventListener("click", resetStoreInfoForm);
@@ -3480,6 +3564,7 @@ function startEditStoreInfo(storeName) {
 }
 
 function renderStoreInfoList() {
+  renderStoreFix();
   const container = document.getElementById("storeInfoList");
   const names = Object.keys(storeInfoMap);
   if (names.length === 0) {
