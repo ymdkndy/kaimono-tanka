@@ -397,6 +397,14 @@
         </label>
       </div>
 
+      <div class="field">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:600; color:var(--ink); font-size:14px;">
+          <input type="checkbox" id="noBuyToggle" style="width:17px; height:17px;">
+          🛍 買わなかった(値段チェックだけ)
+        </label>
+        <div class="hint" id="noBuyHint" style="display:none;">単価の比較には入るけど、家計簿の合計には入らないよ</div>
+      </div>
+
       <div id="discountFields" style="display:none; margin-bottom:12px;">
         <div class="field">
           <label>表示価格(円)</label>
@@ -1425,6 +1433,13 @@ function todayStr() {
 // ---- Discount ----
 let currentDiscountType = "percent";
 
+document.getElementById("noBuyToggle").addEventListener("change", (e) => {
+  document.getElementById("noBuyHint").style.display = e.target.checked ? "block" : "none";
+});
+function setNoBuy(on) {
+  document.getElementById("noBuyToggle").checked = !!on;
+  document.getElementById("noBuyHint").style.display = on ? "block" : "none";
+}
 document.getElementById("discountToggle").addEventListener("change", (e) => {
   const on = e.target.checked;
   document.getElementById("discountFields").style.display = on ? "block" : "none";
@@ -1627,6 +1642,7 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
   const memo = document.getElementById("memo").value.trim();
   const makerRaw = cleanName(document.getElementById("maker").value);
   const maker = makerRaw ? canonOf("maker", makerRaw) : "";
+  const noBuy = document.getElementById("noBuyToggle").checked;
   const isDiscount = document.getElementById("discountToggle").checked;
   let originalPrice = null, discountType = null, discountValue = null, discountLabel = null;
   if (isDiscount) {
@@ -1659,6 +1675,7 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
         unitPrice, unitKey: normUnitKey(currentUnit),
         label: unitLabel(currentUnit),
         memo, maker, originalPrice, discountType, discountValue, discountLabel,
+        noBuy: noBuy || undefined,
         ...(buyIso !== isoFromEntry(entries[idx]) ? { date: mdOfIso(buyIso), dateISO: buyIso, ts: tsOfIso(buyIso) } : {}),
       };
     }
@@ -1672,6 +1689,7 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
       unitPrice, unitKey: normUnitKey(currentUnit),
       label: unitLabel(currentUnit),
       memo, maker, originalPrice, discountType, discountValue, discountLabel,
+      ...(noBuy ? { noBuy: true } : {}),
       date: mdOfIso(buyIso),
       dateISO: buyIso,
       ts: buyIso === isoToday() ? Date.now() : tsOfIso(buyIso)
@@ -1679,7 +1697,7 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
   }
 
   saveEntries(`${itemName}(${storeName})`); // not awaited: keep recording while it saves
-  if (!wasEditing) autoCheckMemo(itemName, groupName, storeName, buyIso);
+  if (!wasEditing && !noBuy) autoCheckMemo(itemName, groupName, storeName, buyIso);
 
   unitManual = false;
   makerAutoFilled = false;
@@ -1692,6 +1710,7 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
   document.getElementById("qty").value = "";
   updateQtyCalc();
   document.getElementById("memo").value = "";
+  setNoBuy(false);
   document.getElementById("discountToggle").checked = false;
   document.getElementById("discountFields").style.display = "none";
   document.getElementById("originalPrice").value = "";
@@ -1720,6 +1739,7 @@ document.getElementById("cancelEditBtn").addEventListener("click", () => {
   document.getElementById("qty").value = "";
   updateQtyCalc();
   document.getElementById("memo").value = "";
+  setNoBuy(false);
   document.getElementById("discountToggle").checked = false;
   document.getElementById("discountFields").style.display = "none";
   document.getElementById("originalPrice").value = "";
@@ -1748,6 +1768,7 @@ function startEdit(entry) {
   document.getElementById("maker").value = entry.maker || "";
   { const iso = isoFromEntry(entry); setBuyDate(iso, true); }
 
+  setNoBuy(entry.noBuy);
   // discountType covers new-format entries; discountPercent is kept for entries saved before this update
   const legacyPercent = entry.discountPercent;
   if (entry.discountType || legacyPercent) {
@@ -1800,6 +1821,7 @@ function copyEntry(entry) {
 
   // Price and discount are left blank/off since those are the details most likely to change on a repeat purchase
   document.getElementById("price").value = "";
+  setNoBuy(false);
   document.getElementById("discountToggle").checked = false;
   document.getElementById("discountFields").style.display = "none";
   document.getElementById("price").readOnly = false;
@@ -2119,7 +2141,7 @@ function renderList() {
         <div style="display:flex; align-items:center; gap:6px;">
           <div class="entry-right">
             ${fmt(e.unitPrice)}円
-            <small>${e.price}円/${e.qty}${e.unit}${(e.discountLabel || e.discountPercent) ? ` <span style="color:var(--warn);">(${e.discountLabel || (e.discountPercent + '%引き')})</span>` : ''}</small>
+            <small>${e.noBuy ? '<span style="color:var(--sub);">🛍チェックのみ </span>' : ''}${e.price}円/${e.qty}${e.unit}${(e.discountLabel || e.discountPercent) ? ` <span style="color:var(--warn);">(${e.discountLabel || (e.discountPercent + '%引き')})</span>` : ''}</small>
           </div>
           <span class="copy-x" data-copy-id="${e.id}">⧉</span>
           <span class="delete-x" data-id="${e.id}">×</span>
@@ -3419,7 +3441,7 @@ function renderKakei() {
   const thisMonth = isoToday().slice(0, 7);
   if (!kkMonth) kkMonth = thisMonth;
   document.querySelectorAll("#kkDomainRow .catbtn").forEach(b => b.classList.toggle("active", b.dataset.kd === kkDomain));
-  const list = entries.filter(kkInDomain);
+  const list = entries.filter(e => !e.noBuy && kkInDomain(e));
   const byMonth = {};
   list.forEach(e => { const m = monthOf(e); byMonth[m] = (byMonth[m] || 0) + (Number(e.price) || 0); });
   const cur = list.filter(e => monthOf(e) === kkMonth);
